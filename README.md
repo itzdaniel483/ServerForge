@@ -27,26 +27,39 @@ Built for speed, security, and ease of use.
 
 | Component | Requirement |
 |-----------|-------------|
-| **OS** | Windows, Linux, or macOS |
-| **Node.js** | Version 18 or higher |
+| **OS** | Windows 10/11, Linux (Ubuntu/Debian), or macOS |
+| **Node.js** | **Version 18 or higher** (Required) |
 | **RAM** | 4GB+ Recommended |
 | **Disk** | 10GB+ (varies by game) |
 
+---
+
 ## 📦 Installation
 
-### 🪟 Windows (One-Click)
+### 🪟 Windows (Quick Start)
 
-1.  **Run the installer** (PowerShell as Administrator):
-    ```powershell
-    .\installers\windows\install.ps1
-    ```
-2.  **Start the panel:**
-    ```powershell
-    npm start
-    ```
-3.  **Login:** Open `http://localhost:5173`
-    *   Default User: `admin`
-    *   Default Pass: `admin`
+1.  **Prerequisite:** Ensure **Node.js v18+** is installed. [Download here](https://nodejs.org/).
+2.  **Download & Extract:** Unzip `ServerForge_v1.0.zip` to a folder of your choice (e.g., `C:\ServerForge`).
+3.  **Run Installer:**
+    *   Right-click the Start button and select **Terminal (Admin)** or **PowerShell (Admin)**.
+    *   Navigate to your folder: `cd C:\ServerForge`
+    *   Run this command to set up dependencies:
+        ```powershell
+        Set-ExecutionPolicy Bypass -Scope Process -Force; .\installers\windows\install.ps1
+        ```
+4.  **Start ServerForge:**
+    *   Ensure you are in the root `ServerForge_v1.0` folder.
+    *   Run:
+        ```powershell
+        npm start
+        ```
+5.  **Access the Panel:**
+    *   Open your browser to: **`http://localhost:3000`**
+    *   **Default Username:** `admin`
+    *   **Default Password:** `admin`
+
+> [!TIP]
+> If you see an "Execution Policy" error, ensure you are running PowerShell as **Administrator**.
 
 ### 🐧 Linux / macOS
 
