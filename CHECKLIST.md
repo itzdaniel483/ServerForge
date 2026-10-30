@@ -64,7 +64,8 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] codex protocol draft 2 (security review) + claude UI contract
 - [ ] codex confirms the UI contract (nodeOnline, actions, error codes, fingerprint confirm, cancel code)
 - [ ] Daniel names the first Windows PC (LAN IP) for the UFW rule
-- [ ] Phase 1: node mode, pairing, link (codex); Nodes page (claude)
+- [x] Phase 1 backend (codex, 47/47) + Nodes page (claude); e2e tested on a throwaway hub
+- [ ] Phase 1 deploy: waiting on codex enrol route fix (server.js `_req`) + route test; listener stays off in production
 - [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
 - [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)
 - [ ] Phase 4: Windows node package + test on a real Windows PC
