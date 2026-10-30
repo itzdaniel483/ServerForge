@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
-// UI v2 theme (claude, 2026-10-30). Every colour comes from CSS variables in src/themes.css, so a
+// UI v3 theme (claude, 2026-10-30): flat control-panel look. Small fixed radii (no bubbles), no glows.
+// Colours as UI v2: Every colour comes from CSS variables in src/themes.css, so a
 // palette is picked at runtime (html[data-theme]). gray = tinted neutrals, accent = main colour,
 // accent2 = highlight. Old names (ember, blue, indigo...) map to accent so every screen follows the theme.
 const ramp = (v, keys = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]) =>
@@ -9,6 +10,8 @@ const accent = ramp('a');
 export default {
     content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
     theme: {
+        // Replaces Tailwind's radii: everything tops out at 6px except true circles (rounded-full).
+        borderRadius: { none: '0', sm: '2px', DEFAULT: '3px', md: '4px', lg: '4px', xl: '5px', '2xl': '6px', '3xl': '6px', full: '9999px' },
         extend: {
             colors: {
                 gray, slate: gray, accent, ember: accent, blue: accent, indigo: accent, cyan: accent, purple: accent,
@@ -22,8 +25,8 @@ export default {
                 mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
             },
             boxShadow: {
-                glow: '0 0 0 1px rgb(var(--a-400) / .35), 0 8px 32px -8px rgb(var(--a-500) / .45)',
-                card: '0 1px 0 0 rgb(255 255 255 / .04) inset, 0 12px 32px -16px rgb(0 0 0 / .6)',
+                glow: 'none',
+                card: 'none',
             },
         },
     },

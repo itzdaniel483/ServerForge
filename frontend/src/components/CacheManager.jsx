@@ -74,7 +74,7 @@ export default function CacheManager() {
                 <div className="relative w-full sm:w-72">
                     <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                     <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Find a game" aria-label="Find a game"
-                        className="w-full h-11 pl-10 pr-4 rounded-xl bg-white/[.03] border border-white/[.08] text-white placeholder-gray-500 focus:outline-none focus:border-accent-400" />
+                        className="w-full h-8 pl-10 pr-4 rounded-xl bg-gray-900 border border-gray-800 text-white placeholder-gray-500 focus:outline-none focus:border-accent-400" />
                 </div>
             </div>
             {nodes.length > 1 && (
@@ -83,7 +83,7 @@ export default function CacheManager() {
                     {nodes.map(n => (
                         <button key={n.id} role="radio" aria-checked={nodeId === n.id} disabled={!usable(n)} onClick={() => setNodeId(n.id)}
                             title={usable(n) ? '' : n.online ? "This machine can't manage a cache yet" : 'This machine is offline'}
-                            className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold ring-1 transition disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/20 text-white ring-accent-400' : 'bg-white/[.03] text-gray-300 ring-white/10 hover:text-white'}`}>
+                            className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold ring-1 transition disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/20 text-white ring-accent-400' : 'bg-gray-900 text-gray-300 ring-gray-700 hover:text-white'}`}>
                             <OsIcon os={n.os} size={15} />{n.id === 'local' ? 'This panel' : n.name}
                             <span className="text-xs font-medium text-gray-400">{osLabel(n.os)}</span>
                         </button>
@@ -147,7 +147,7 @@ function CacheRow({ game, entry, pending, nodeId, onDownload, onCancel, onDelete
             </div>
             {status === 'downloading' && <Meter value={entry?.progress || 0} label={`${game.name} download`} className="mx-4 mb-3" />}
             {busy && showLog && (
-                <pre className="mx-4 mb-4 h-48 overflow-auto rounded-xl bg-gray-950/80 border border-white/[.06] p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap">{log || 'Waiting for SteamCMD output…'}</pre>
+                <pre className="mx-4 mb-4 h-48 overflow-auto rounded-xl bg-gray-950/80 border border-gray-800 p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap">{log || 'Waiting for SteamCMD output…'}</pre>
             )}
         </Card>
     );

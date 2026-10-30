@@ -71,7 +71,7 @@ export default function TaskManager({ server, canEdit }) {
             </div>
 
             {canEdit && (
-                <Card className="p-6 space-y-4 xl:sticky xl:top-24">
+                <Card className="p-4 space-y-4 xl:sticky xl:top-24">
                     <h2 className="text-lg font-bold text-white">New task</h2>
                     <div className="grid grid-cols-3 gap-2">
                         {Object.entries(TYPES).map(([k, v]) => (

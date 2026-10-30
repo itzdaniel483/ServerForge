@@ -81,7 +81,7 @@ function PluginManager({ server }) {
     return (
         <div className="space-y-6">
             {/* Installed Plugins */}
-            <div className="glass rounded-2xl p-6">
+            <div className="glass rounded-2xl p-4">
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
                     <CheckCircle size={20} className="mr-2 text-green-400" />
                     Installed Plugins
@@ -108,7 +108,7 @@ function PluginManager({ server }) {
             </div>
 
             {/* Available Plugins */}
-            <div className="glass rounded-2xl p-6">
+            <div className="glass rounded-2xl p-4">
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
                     <Download size={20} className="mr-2 text-blue-400" />
                     Available Plugins
@@ -132,7 +132,7 @@ function PluginManager({ server }) {
                                     disabled={installing[plugin.id]}
                                     className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${installing[plugin.id]
                                         ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                        : 'bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white'
+                                        : 'bg-accent-600 hover:bg-accent-500 text-white'
                                         }`}
                                 >
                                     <Download size={16} />
@@ -152,7 +152,7 @@ function PluginManager({ server }) {
             </div>
 
             {/* Steam Workshop */}
-            <div className="glass rounded-2xl p-6">
+            <div className="glass rounded-2xl p-4">
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
                     <Upload size={20} className="mr-2 text-purple-400" />
                     Steam Workshop
@@ -206,7 +206,7 @@ function PluginManager({ server }) {
                                 }}
                             />
                             <button
-                                className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white px-4 py-2 rounded-lg font-medium"
+                                className="bg-accent-600 hover:bg-accent-500 text-white px-4 py-2 rounded-lg font-medium"
                                 onClick={() => handleWorkshopSearch(document.getElementById('workshopSearchInput').value)}
                             >
                                 Search

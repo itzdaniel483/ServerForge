@@ -43,7 +43,7 @@ export default function ServerSettings({ server, onSaved }) {
     return (
         <div className="space-y-6">
             {data.fields.length > 0 ? (
-                <Card className="p-6 space-y-5">
+                <Card className="p-4 space-y-5">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <h2 className="text-xl font-bold text-white">Settings</h2>
                         <Button variant="primary" onClick={save} disabled={busy}><Save size={17} />{busy ? 'Saving…' : 'Save'}</Button>

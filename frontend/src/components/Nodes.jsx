@@ -1,4 +1,4 @@
-// Nodes page (claude, multi-node phase 1, 2026-10-30). Admin-only. Lists the hub ("Local host") and
+// Nodes page (claude, multi-node phase 1, 2026-10-30; UI v3 table). Admin-only. Lists the hub ("Local host") and
 // paired nodes, adds a node with a one-time enrolment bundle, approves a pending node only after the
 // admin confirms its key fingerprint, and removes nodes. API: codex, docs/MULTI-NODE.md (#3359).
 import React, { useState, useEffect, useCallback } from 'react';
@@ -52,9 +52,9 @@ export default function Nodes() {
     const remote = nodes.filter(n => n.id !== 'local');
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             <PageHeader title="Nodes" sub="Other ServerForge machines joined to this panel, for example a Windows PC for Windows-only games."
-                actions={<Button variant="primary" onClick={addNode} disabled={!config?.enabled || !!enrolment}><Plus size={18} />Add node</Button>} />
+                actions={<Button variant="primary" onClick={addNode} disabled={!config?.enabled || !!enrolment}><Plus size={15} />Add node</Button>} />
 
             {error && <Notice>{error}</Notice>}
             {config && !config.enabled && (
@@ -65,58 +65,51 @@ export default function Nodes() {
 
             {pending.map(c => <PendingCard key={c.id} candidate={c} onDone={load} onError={setError} />)}
 
-            <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr))]">
-                {nodes.map(n => <NodeCard key={n.id} node={n} onRemove={remove} />)}
-            </div>
-            {remote.length === 0 && pending.length === 0 && !enrolment && (
-                <div className="text-gray-400">No other nodes yet. Only this machine is listed.</div>
-            )}
+            <Card>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-[13px]">
+                        <thead><tr><th className="th w-28">Status</th><th className="th">Machine</th><th className="th hidden md:table-cell w-36">CPU</th><th className="th hidden md:table-cell w-36">RAM</th><th className="th hidden lg:table-cell w-36">Disk</th><th className="th hidden sm:table-cell">Connection</th><th className="th text-right">Actions</th></tr></thead>
+                        <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} />)}</tbody>
+                    </table>
+                </div>
+                {remote.length === 0 && pending.length === 0 && !enrolment && (
+                    <div className="px-3 py-3 text-xs text-gray-500 border-t border-gray-800">No other machines yet. Use Add node to join one.</div>
+                )}
+            </Card>
         </div>
     );
 }
 
-function NodeCard({ node, onRemove }) {
+function NodeRow({ node, onRemove }) {
     const local = node.id === 'local';
     const h = node.host || {};
     const meters = [
-        { icon: Cpu, label: 'CPU', v: h.cpuPercent },
-        { icon: MemoryStick, label: 'RAM', v: pct(h.memory?.used, h.memory?.total) },
-        { icon: HardDrive, label: 'Disk', v: pct(h.disk?.used, h.disk?.total) },
+        { label: 'CPU', v: h.cpuPercent, cls: 'hidden md:table-cell' },
+        { label: 'RAM', v: pct(h.memory?.used, h.memory?.total), cls: 'hidden md:table-cell' },
+        { label: 'Disk', v: pct(h.disk?.used, h.disk?.total), cls: 'hidden lg:table-cell' },
     ];
     return (
-        <Card className={`p-5 space-y-4 ${node.online ? 'ring-1 ring-go-500/30' : 'ring-1 ring-white/10'}`}>
-            <div className="flex items-start gap-3">
-                <div className={`w-12 h-12 rounded-xl grid place-items-center shrink-0 ${node.online ? 'bg-accent-500/15 text-accent-200' : 'bg-white/[.04] text-gray-500'}`}><OsIcon os={node.os} size={22} /></div>
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-lg font-extrabold text-white truncate">{node.name}</span>
-                        {local && <span className="px-2 h-6 inline-flex items-center rounded-md bg-accent-500/15 text-accent-200 text-xs font-bold uppercase tracking-wider">This panel</span>}
-                    </div>
-                    <div className="text-sm text-gray-400">{osName(node.os)}{node.version ? ` · v${node.version}` : ''}</div>
+        <tr className="hover:bg-gray-800/40">
+            <td className="td"><span className={`inline-flex items-center gap-1.5 text-xs font-medium ${node.online ? 'text-go-300' : 'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${node.online ? 'bg-go-400' : 'bg-gray-500'}`} />{node.online ? 'Online' : 'Offline'}</span></td>
+            <td className="td">
+                <div className="flex items-center gap-2.5">
+                    <span className="text-gray-400"><OsIcon os={node.os} size={15} /></span>
+                    <span className="min-w-0">
+                        <span className="flex items-center gap-2"><span className="font-medium text-white truncate">{node.name}</span>{local && <span className="h-4 px-1 inline-flex items-center rounded-sm border border-accent-500/50 text-[10px] font-medium text-accent-300">This panel</span>}</span>
+                        <span className="block text-xs text-gray-500">{osName(node.os)}{node.version ? ` · v${node.version}` : ''}</span>
+                    </span>
                 </div>
-                <span className={`inline-flex items-center gap-2 h-7 px-3 rounded-full text-xs font-bold uppercase tracking-wider ring-1 ${node.online ? 'bg-go-500/15 text-go-300 ring-go-500/40' : 'bg-white/[.04] text-gray-300 ring-white/10'}`}>
-                    <span className={`w-2 h-2 rounded-full ${node.online ? 'bg-go-400' : 'bg-gray-500'}`} />{node.online ? 'Online' : 'Offline'}
-                </span>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-                {meters.map(m => (
-                    <div key={m.label}>
-                        <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                            <span className="flex items-center gap-1"><m.icon size={12} className="text-accent-300" />{m.label}</span>
-                            <span className="text-white tabular-nums">{m.v == null ? '—' : `${Math.round(m.v)}%`}</span>
-                        </div>
-                        <Meter value={m.v ?? 0} label={m.v == null ? undefined : `${node.name} ${m.label}`} className="mt-1.5" />
-                    </div>
-                ))}
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-                <Clock size={14} />{local ? 'Always connected' : node.online ? 'Connected' : `Last seen ${ago(node.lastSeen)}`}
-                {!local && <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onRemove(node)} aria-label={`Remove ${node.name}`}><Trash2 size={15} />Remove</Button>}
-            </div>
-            {!local && (node.actions || []).length === 0 && (
-                <div className="text-xs text-gray-500">Paired. Its servers appear here in the next update (read-only first).</div>
-            )}
-        </Card>
+            </td>
+            {meters.map(m => (
+                <td key={m.label} className={`td ${m.cls}`}>
+                    {m.v == null ? <span className="text-gray-600">—</span> : (
+                        <div className="w-28"><div className="text-xs text-gray-200 tabular-nums">{Math.round(m.v)}%</div><Meter value={m.v} label={`${node.name} ${m.label}`} className="mt-1" /></div>
+                    )}
+                </td>
+            ))}
+            <td className="td hidden sm:table-cell text-xs text-gray-400"><span className="inline-flex items-center gap-1.5"><Clock size={12} />{local ? 'Always connected' : node.online ? 'Connected' : `Last seen ${ago(node.lastSeen)}`}</span></td>
+            <td className="td text-right">{!local && <Button size="sm" variant="quiet" onClick={() => onRemove(node)} aria-label={`Remove ${node.name}`}><Trash2 size={13} />Remove</Button>}</td>
+        </tr>
     );
 }
 
@@ -146,11 +139,11 @@ function EnrolPanel({ enrolment, onClose, onError }) {
     const expired = left === 0;
 
     return (
-        <Card className="p-6 ring-1 ring-accent-400/40 space-y-5">
+        <Card className="p-4 ring-1 ring-accent-400/40 space-y-5">
             <div className="flex items-start gap-3">
                 <Network size={22} className="text-accent-300 mt-0.5" />
                 <div className="flex-1">
-                    <div className="text-xl font-extrabold text-white">Add a node</div>
+                    <div className="text-xl font-semibold text-white">Add a node</div>
                     <div className={`text-sm font-semibold ${expired ? 'text-stop-300' : 'text-gray-400'}`}>{expired ? 'This code has expired. Start again.' : `Code expires in ${mm}:${String(ss).padStart(2, '0')}. It works once.`}</div>
                 </div>
                 <Button size="sm" variant="quiet" onClick={saved || expired ? onClose : cancel} aria-label={saved || expired ? 'Close' : 'Cancel this code'}><X size={16} />{saved || expired ? 'Close' : 'Cancel code'}</Button>
@@ -188,10 +181,10 @@ function PendingCard({ candidate, onDone, onError }) {
         finally { setBusy(false); }
     }
     return (
-        <Card className="p-6 ring-1 ring-warn-500/40 space-y-4">
+        <Card className="p-4 ring-1 ring-warn-500/40 space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
                 <ShieldCheck size={22} className="text-warn-300" />
-                <div className="text-lg font-extrabold text-white">A machine wants to join</div>
+                <div className="text-lg font-semibold text-white">A machine wants to join</div>
                 <span className="text-sm text-gray-400">expires in {Math.ceil(left / 60000)} min</span>
             </div>
             <div className="text-sm text-gray-300">
@@ -200,7 +193,7 @@ function PendingCard({ candidate, onDone, onError }) {
             </div>
             <div>
                 <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Its fingerprint</div>
-                <div className="font-mono text-xl sm:text-2xl font-bold tracking-wider text-white break-all">{groupPrint(candidate.fingerprint)}</div>
+                <div className="font-mono text-xl sm:text-lg font-bold tracking-wider text-white break-all">{groupPrint(candidate.fingerprint)}</div>
             </div>
             <label className="flex items-center gap-3 cursor-pointer select-none">
                 <input type="checkbox" className="w-5 h-5 accent-accent-500" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />

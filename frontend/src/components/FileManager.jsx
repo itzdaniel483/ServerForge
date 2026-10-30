@@ -180,7 +180,7 @@ function FileManager({ serverId, canEdit = true }) {
                                 {canEdit && <button
                                     onClick={saveFile}
                                     disabled={saving}
-                                    className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm"
+                                    className="bg-accent-600 hover:bg-accent-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm"
                                 >
                                     <Save size={16} />
                                     <span>{saving ? 'Saving...' : 'Save'}</span>

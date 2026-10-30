@@ -94,7 +94,7 @@ function BackupManager({ serverId, canRestore = true }) {
                 <button
                     onClick={createBackup}
                     disabled={creating}
-                    className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 font-medium text-sm"
+                    className="bg-accent-600 hover:bg-accent-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 font-medium text-sm"
                 >
                     <Plus size={16} />
                     <span>{creating ? 'Creating Backup...' : 'Create Backup'}</span>
@@ -105,36 +105,36 @@ function BackupManager({ serverId, canRestore = true }) {
                 <table className="w-full text-left text-sm text-gray-400">
                     <thead className="bg-gray-950 text-gray-200 uppercase font-medium">
                         <tr>
-                            <th className="px-6 py-3">Filename</th>
-                            <th className="px-6 py-3">Created</th>
-                            <th className="px-6 py-3">Size</th>
-                            <th className="px-6 py-3 text-right">Actions</th>
+                            <th className="px-4 py-3">Filename</th>
+                            <th className="px-4 py-3">Created</th>
+                            <th className="px-4 py-3">Size</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800">
                         {loading ? (
                             <tr>
-                                <td colSpan="4" className="px-6 py-8 text-center">Loading backups...</td>
+                                <td colSpan="4" className="px-4 py-8 text-center">Loading backups...</td>
                             </tr>
                         ) : backups.length === 0 ? (
                             <tr>
-                                <td colSpan="4" className="px-6 py-8 text-center text-gray-500">No backups found.</td>
+                                <td colSpan="4" className="px-4 py-8 text-center text-gray-500">No backups found.</td>
                             </tr>
                         ) : (
                             backups.map((backup) => (
                                 <tr key={backup.filename} className="hover:bg-gray-800/30 transition-colors">
-                                    <td className="px-6 py-4 font-mono text-white">{backup.filename}</td>
-                                    <td className="px-6 py-4 flex items-center">
+                                    <td className="px-4 py-4 font-mono text-white">{backup.filename}</td>
+                                    <td className="px-4 py-4 flex items-center">
                                         <Clock size={14} className="mr-2 text-gray-600" />
                                         {formatDate(backup.created)}
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-4">
                                         <div className="flex items-center">
                                             <HardDrive size={14} className="mr-2 text-gray-600" />
                                             {formatSize(backup.size)}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 text-right space-x-2">
+                                    <td className="px-4 py-4 text-right space-x-2">
                                         {canRestore && <>
                                         <button
                                             onClick={() => restoreBackup(backup.filename)}

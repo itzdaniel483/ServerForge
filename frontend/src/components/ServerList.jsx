@@ -6,8 +6,8 @@ import { errorText } from '../api';
 import { NodeBadge } from '../nodes';
 import { can, isRemote, nodeOffline } from '../nodeUtils';
 
-// Servers home (claude, UI v2 2026-10-30): totals, filter + search, then game-art cards.
-// Actions are always visible (they used to appear only on hover, so touch screens never saw them).
+// Servers home (claude, UI v3 2026-10-30): totals, then one dense table with filter/search in its
+// toolbar. Actions are always visible (never hover-only, so touch screens see them).
 function ServerList({ onOpen, onInstall, isAdmin }) {
     const [servers, setServers] = useState(null);
     const [error, setError] = useState('');
@@ -62,95 +62,114 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
         && (!needle || `${s.name} ${s.game} ${s.nodeName || ''}`.toLowerCase().includes(needle)));
 
     return (
-        <div className="space-y-6">
-            <PageHeader title="Servers" sub={servers.length ? `${online.length} of ${servers.length} online` : 'Install your first game server to get started.'}
-                actions={isAdmin && servers.length > 0 && <Button variant="primary" onClick={onInstall}><Plus size={18} />New server</Button>} />
+        <div className="space-y-4">
+            <PageHeader title="Servers" sub={servers.length ? `${online.length} of ${servers.length} running` : 'No servers yet.'}
+                actions={isAdmin && servers.length > 0 && <Button variant="primary" onClick={onInstall}><Plus size={15} />New server</Button>} />
 
             {error && <Notice>{error}</Notice>}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <Stat icon={ServerIcon} label="Servers" value={servers.length} />
-                <Stat icon={Activity} label="Online" value={online.length} tone={online.length ? 'text-go-300' : 'text-white'} meter={servers.length ? (online.length / servers.length) * 100 : 0} />
+                <Stat icon={Activity} label="Running" value={online.length} tone={online.length ? 'text-go-300' : 'text-white'} meter={servers.length ? (online.length / servers.length) * 100 : 0} />
                 <Stat icon={Users} label="Players" value={players ?? '—'}
-                    sub={!online.length ? 'no servers running' : known.length < online.length ? `${online.length - known.length} server${online.length - known.length > 1 ? 's' : ''} not reporting` : 'across online servers'} />
-                <Stat icon={AlertTriangle} label="Need attention" value={servers.filter(s => s.status === 'failed').length}
-                    tone={servers.some(s => s.status === 'failed') ? 'text-stop-300' : 'text-white'} sub="failed installs" />
+                    sub={!online.length ? 'no servers running' : known.length < online.length ? `${online.length - known.length} not reporting` : 'across running servers'} />
+                <Stat icon={AlertTriangle} label="Failed installs" value={servers.filter(s => s.status === 'failed').length}
+                    tone={servers.some(s => s.status === 'failed') ? 'text-stop-300' : 'text-white'} />
             </div>
 
             {servers.length === 0 ? (
-                <Empty icon={<ServerIcon size={40} />} title="No servers yet" sub="Pick a game, name it, and ServerForge downloads and sets it up."
-                    action={isAdmin && <Button variant="primary" size="lg" onClick={onInstall}><Plus size={18} />Install a server</Button>} />
+                <Empty icon={<ServerIcon size={28} />} title="No servers yet" sub="Pick a game, name it, and ServerForge downloads and sets it up."
+                    action={isAdmin && <Button variant="primary" onClick={onInstall}><Plus size={15} />Install a server</Button>} />
             ) : (
-                <>
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex p-1 rounded-xl bg-white/[.03] border border-white/[.06]">
+                <Card>
+                    <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-gray-800">
+                        <div className="flex rounded border border-gray-700 overflow-hidden">
                             {['all', 'online', 'offline'].map(f => (
                                 <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f}
-                                    className={`h-9 px-4 rounded-lg text-sm font-semibold capitalize ${filter === f ? 'bg-white/[.1] text-white' : 'text-gray-400 hover:text-white'}`}>{f}</button>
+                                    className={`h-7 px-3 text-xs font-medium border-r border-gray-700 last:border-r-0 ${filter === f ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>{{ all: 'All', online: 'Running', offline: 'Stopped' }[f]}</button>
                             ))}
                         </div>
                         {multi && (
                             <select value={node} onChange={e => setNode(e.target.value)} aria-label="Machine"
-                                className="h-11 px-3 rounded-xl bg-white/[.03] border border-white/[.08] text-white focus:outline-none focus:border-accent-400 [&>option]:bg-gray-900">
+                                className="h-7 px-2 rounded border border-gray-700 bg-gray-950 text-xs text-white focus:outline-none focus:border-accent-500">
                                 <option value="all">All machines</option>
                                 {machines.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                             </select>
                         )}
-                        <div className="relative flex-1 min-w-[220px] max-w-md">
-                            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-                            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a server" aria-label="Find a server"
-                                className="w-full h-11 pl-10 pr-4 rounded-xl bg-white/[.03] border border-white/[.08] text-white placeholder-gray-500 focus:outline-none focus:border-accent-400" />
+                        <div className="relative ml-auto w-full sm:w-64">
+                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter servers" aria-label="Find a server"
+                                className="w-full h-7 pl-8 pr-2 rounded border border-gray-700 bg-gray-950 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent-500" />
                         </div>
                     </div>
-
-                    <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
-                        {shown.map(s => <ServerCard key={s.id} s={s} multi={multi} isAdmin={isAdmin} busy={busy[s.id]} act={act} onOpen={onOpen} />)}
-                        {shown.length === 0 && <div className="text-gray-400 py-10">No servers match.</div>}
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-[13px]">
+                            <thead>
+                                <tr>
+                                    <th className="th w-28">Status</th>
+                                    <th className="th">Server</th>
+                                    {multi && <th className="th hidden md:table-cell">Machine</th>}
+                                    <th className="th hidden sm:table-cell">Address</th>
+                                    <th className="th hidden md:table-cell">Players</th>
+                                    <th className="th hidden lg:table-cell">Owner</th>
+                                    <th className="th text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {shown.map(s => <ServerRow key={s.id} s={s} multi={multi} isAdmin={isAdmin} busy={busy[s.id]} act={act} onOpen={onOpen} />)}
+                            </tbody>
+                        </table>
+                        {shown.length === 0 && <div className="px-3 py-6 text-[13px] text-gray-400">No servers match.</div>}
                     </div>
-                </>
+                </Card>
             )}
         </div>
     );
 }
 
-function ServerCard({ s, multi, isAdmin, busy, act, onOpen }) {
+function ServerRow({ s, multi, isAdmin, busy, act, onOpen }) {
     const offline = nodeOffline(s);
     const on = s.status === 'running' && !offline;
     const canPower = (isAdmin || (s.perms || []).includes('power')) && s.status !== 'installing' && s.status !== 'failed' && can(s, 'power');
     const hasPlayers = on && s.maxPlayers && s.players !== null && s.players !== undefined;
+    const host = (isRemote(s) && s.nodeHost) || window.location.hostname;
     return (
-        <Card className={`overflow-hidden flex flex-col transition-all hover:-translate-y-0.5 ${on ? 'ring-1 ring-go-500/40 shadow-[0_12px_40px_-16px_rgba(34,197,94,.45)]' : s.status === 'failed' ? 'ring-1 ring-stop-500/40' : 'hover:shadow-glow'}`}>
-            <button onClick={() => onOpen(s)} className="text-left" aria-label={`Open ${s.name}`}>
-                <GameArt gameId={s.gameId} name={s.game} className="h-36" imgClassName={`object-center ${offline ? 'grayscale opacity-50' : ''}`}>
-                    {multi && <div className="absolute top-3 left-3"><NodeBadge s={s} /></div>}
-                    <div className="absolute top-3 right-3"><Status status={offline ? 'nodeoffline' : s.status} /></div>
-                    <div className="absolute bottom-3 left-4 right-4">
-                        <div className="text-xl font-extrabold text-white truncate drop-shadow">{s.name || 'Unnamed server'}</div>
-                        <div className="text-sm font-medium text-gray-300 truncate">{s.game || 'Unknown game'}</div>
+        <tr className={`group hover:bg-gray-800/40 ${offline ? 'opacity-60' : ''}`}>
+            <td className="td"><Status status={offline ? 'nodeoffline' : s.status} /></td>
+            <td className="td">
+                <button onClick={() => onOpen(s)} className="flex items-center gap-3 text-left min-w-0" aria-label={`Open ${s.name}`}>
+                    <GameArt gameId={s.gameId} name={s.game} className="w-16 h-[30px] rounded-sm shrink-0" />
+                    <span className="min-w-0">
+                        <span className="block font-medium text-white truncate group-hover:text-accent-300">{s.name || 'Unnamed server'}</span>
+                        <span className="block text-xs text-gray-500 truncate">{s.game || 'Unknown game'}{s.installError ? ` · ${s.installError}` : ''}</span>
+                    </span>
+                </button>
+            </td>
+            {multi && <td className="td hidden md:table-cell"><NodeBadge s={s} /></td>}
+            <td className="td hidden sm:table-cell font-mono text-xs text-gray-300">{s.port ? `${host}:${s.port}` : '—'}</td>
+            <td className="td hidden md:table-cell">
+                {hasPlayers ? (
+                    <div className="w-24">
+                        <div className="text-xs text-gray-200 tabular-nums">{s.players}/{s.maxPlayers}</div>
+                        <Meter value={(Number(s.players) / Number(s.maxPlayers)) * 100} label={`${s.name} players`} className="mt-1" />
                     </div>
-                </GameArt>
-            </button>
-            <div className="p-4 flex flex-col gap-4 flex-1">
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Port</div><div className="font-mono font-semibold text-gray-100">{s.port || '—'}</div></div>
-                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Players</div><div className="font-semibold text-gray-100 tabular-nums">{hasPlayers ? `${s.players}/${s.maxPlayers}` : '—'}</div></div>
-                    <div className="min-w-0"><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Owner</div><div className="font-semibold text-gray-100 truncate">{s.owner || '—'}</div></div>
-                </div>
-                {hasPlayers ? <Meter value={(Number(s.players) / Number(s.maxPlayers)) * 100} label={`${s.name} players`} /> : null}
-                {s.installError && <div className="text-sm font-semibold text-stop-300">{s.installError}</div>}
-                <div className="mt-auto flex items-center gap-2">
+                ) : <span className="text-gray-600">—</span>}
+            </td>
+            <td className="td hidden lg:table-cell text-gray-400">{s.owner || '—'}</td>
+            <td className="td">
+                <div className="flex items-center justify-end gap-1.5">
                     {!canPower ? null : on ? (
                         <>
-                            <Button variant="stop" size="sm" disabled={busy} onClick={() => act(s.id, ['stop'])}><Square size={15} />Stop</Button>
-                            <Button size="sm" disabled={busy} onClick={() => act(s.id, ['stop', 'start'])} title="Restart"><RotateCw size={15} />Restart</Button>
+                            <Button variant="stop" size="sm" disabled={busy} onClick={() => act(s.id, ['stop'])}><Square size={12} />Stop</Button>
+                            <Button size="sm" disabled={busy} onClick={() => act(s.id, ['stop', 'start'])} title="Restart" aria-label="Restart"><RotateCw size={12} /></Button>
                         </>
                     ) : (
-                        <Button variant="go" size="sm" disabled={busy} onClick={() => act(s.id, ['start'])}><Play size={15} />Start</Button>
+                        <Button variant="go" size="sm" disabled={busy} onClick={() => act(s.id, ['start'])}><Play size={12} />Start</Button>
                     )}
-                    <Button variant="quiet" size="sm" className="ml-auto" onClick={() => onOpen(s)}>Manage<ArrowRight size={15} /></Button>
+                    <Button variant="quiet" size="sm" className="hidden sm:inline-flex" onClick={() => onOpen(s)} aria-label={`Manage ${s.name}`}>Manage<ArrowRight size={12} /></Button>
                 </div>
-            </div>
-        </Card>
+            </td>
+        </tr>
     );
 }
 

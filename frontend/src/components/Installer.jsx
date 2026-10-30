@@ -69,14 +69,14 @@ export default function Installer({ onDone }) {
     const machineName = nodeId === 'local' ? 'this panel' : machine.name;
     const picker = nodes.length > 1 && (
         <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Machine">
-            <span className="text-sm font-semibold text-gray-300 mr-1">Install on</span>
+            <span className="text-xs font-medium text-gray-400 mr-1">Install on</span>
             {nodes.map(n => {
                 const ok = installable(n);
                 return (
                     <button key={n.id} role="radio" aria-checked={nodeId === n.id} disabled={installing || !ok} onClick={() => setNodeId(n.id)}
                         title={ok ? '' : n.online ? "This machine can't install servers yet" : 'This machine is offline'}
-                        className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold ring-1 transition disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/20 text-white ring-accent-400' : 'bg-white/[.03] text-gray-300 ring-white/10 hover:text-white'}`}>
-                        <OsIcon os={n.os} size={15} />{n.id === 'local' ? 'This panel' : n.name}
+                        className={`inline-flex items-center gap-2 h-8 px-3 rounded border text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/15 text-white border-accent-500' : 'bg-gray-900 text-gray-300 border-gray-700 hover:text-white'}`}>
+                        <OsIcon os={n.os} size={13} />{n.id === 'local' ? 'This panel' : n.name}
                         <span className="text-xs font-medium text-gray-400">{osLabel(n.os)}{n.id !== 'local' && !n.online ? ' · offline' : ''}</span>
                     </button>
                 );
@@ -86,7 +86,7 @@ export default function Installer({ onDone }) {
     // For a game this machine can't run: another installable machine with the right OS.
     const otherMachine = g => nodes.find(n => n.id !== nodeId && installable(n) && g.platforms.includes(n.os));
 
-    if (!catalog) return <div className="space-y-6">{picker}<div className="text-gray-400">{result?.text || 'Loading games…'}</div></div>;
+    if (!catalog) return <div className="space-y-4">{picker}<div className="text-gray-400">{result?.text || 'Loading games…'}</div></div>;
 
     // SteamCMD prints "progress: 42.17 (...)" while downloading; show the latest as a bar.
     const progress = (() => {
@@ -102,100 +102,89 @@ export default function Installer({ onDone }) {
         .filter(g => (category === 'All' || g.category === category) && g.name.toLowerCase().includes(filter.toLowerCase()))
         .sort((a, b) => (b.supported - a.supported) || a.name.localeCompare(b.name));
 
+    const plat = g => (g.platforms.includes('linux') && g.platforms.includes('win32') ? 'Linux, Windows' : g.platforms.includes('win32') ? 'Windows only' : 'Linux only');
     return (
-        <div className="space-y-6">
-            <PageHeader title="Install a server" sub={`${catalog.games.filter(g => g.supported).length} games run on ${machineName} (${os}). Pick one, name it, install.`} />
+        <div className="space-y-4">
+            <PageHeader title="Install a server" sub={`${catalog.games.filter(g => g.supported).length} games run on ${machineName} (${os}).`} />
             {picker}
-            <div className="grid lg:grid-cols-[1fr_420px] gap-6 items-start">
-                <div className="space-y-4">
-                    <div className="flex flex-wrap gap-3">
-                        <div className="relative flex-1 min-w-[220px]">
-                            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                            <input className="w-full h-11 bg-white/[.03] text-white placeholder-gray-500 pl-11 pr-4 rounded-xl border border-white/[.08] focus:border-accent-400 focus:outline-none" placeholder="Find a game" value={filter} onChange={e => setFilter(e.target.value)} disabled={installing} />
+            <div className="grid lg:grid-cols-[1fr_380px] gap-4 items-start">
+                <Card>
+                    <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-gray-800">
+                        <div className="relative w-full sm:w-64">
+                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                            <input className="w-full h-7 pl-8 pr-2 rounded border border-gray-700 bg-gray-950 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent-500" placeholder="Find a game" aria-label="Find a game" value={filter} onChange={e => setFilter(e.target.value)} disabled={installing} />
                         </div>
-                        <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-white/[.03] border border-white/[.06]">
+                        <div className="flex flex-wrap rounded border border-gray-700 overflow-hidden">
                             {categories.map(c => (
                                 <button key={c} onClick={() => setCategory(c)} aria-pressed={category === c}
-                                    className={`h-9 px-4 rounded-lg text-sm font-semibold ${category === c ? 'bg-white/[.1] text-white' : 'text-gray-400 hover:text-white'}`}>{c}</button>
+                                    className={`h-7 px-2.5 text-xs font-medium border-r border-gray-700 last:border-r-0 ${category === c ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>{c}</button>
                             ))}
                         </div>
                     </div>
-                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr))]">
+                    <div className="divide-y divide-gray-800/70">
                         {shown.map(g => {
                             const on = game?.id === g.id;
                             const other = !g.supported && otherMachine(g);
+                            const row = 'w-full flex items-center gap-3 px-3 py-2 text-left text-[13px] leading-tight transition-colors disabled:cursor-not-allowed';
                             if (other) return (
-                                <button key={g.id} disabled={installing} onClick={() => setNodeId(other.id)} title={`Switch to ${other.name}`}
-                                    className="group text-left rounded-2xl overflow-hidden glass transition-all hover:ring-1 hover:ring-white/20 disabled:cursor-not-allowed">
-                                    <GameArt gameId={g.id} name={g.name} className="h-28" imgClassName="object-center grayscale opacity-60">
-                                        <div className="absolute bottom-2.5 left-3 right-3 font-extrabold text-white leading-snug drop-shadow">{g.name}</div>
-                                    </GameArt>
-                                    <div className="px-3 py-2.5 flex items-center gap-2 text-xs">
-                                        <span className="px-2 py-0.5 rounded-md bg-white/[.06] font-semibold text-gray-300">{g.category}</span>
-                                        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-200 truncate"><OsIcon os={other.os} size={12} />Install on {other.name}</span>
-                                    </div>
+                                <button key={g.id} disabled={installing} onClick={() => setNodeId(other.id)} title={`Switch to ${other.name}`} className={`${row} hover:bg-gray-800/50`}>
+                                    <GameArt gameId={g.id} name={g.name} className="w-16 h-[30px] rounded-sm shrink-0" imgClassName="object-center grayscale opacity-60" />
+                                    <span className="min-w-0 flex-1"><span className="block font-medium text-gray-300 truncate">{g.name}</span><span className="block mt-0.5 text-xs text-gray-500">{g.category}</span></span>
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-300 whitespace-nowrap"><OsIcon os={other.os} size={11} />Install on {other.name}</span>
                                 </button>
                             );
                             return (
                                 <button key={g.id} disabled={installing || !g.supported} onClick={() => setGame(g)} aria-pressed={on}
                                     title={g.supported ? '' : `No ${os} server for this game`}
-                                    className={`group text-left rounded-2xl overflow-hidden glass transition-all disabled:cursor-not-allowed ${on ? 'ring-2 ring-accent-400 shadow-glow' : 'hover:-translate-y-0.5 hover:ring-1 hover:ring-white/20'} ${g.supported ? '' : 'opacity-35 grayscale'}`}>
-                                    <GameArt gameId={g.id} name={g.name} className="h-28">
-                                        {on && <span className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full grid place-items-center bg-accent-500 text-white shadow-glow"><Check size={16} /></span>}
-                                        <div className="absolute bottom-2.5 left-3 right-3 font-extrabold text-white leading-snug drop-shadow">{g.name}</div>
-                                    </GameArt>
-                                    <div className="px-3 py-2.5 flex items-center gap-2 text-xs">
-                                        <span className="px-2 py-0.5 rounded-md bg-white/[.06] font-semibold text-gray-300">{g.category}</span>
-                                        {!g.supported && <span className="font-semibold text-gray-400">{g.platforms.includes('win32') ? 'Windows only' : 'Linux only'}</span>}
-                                    </div>
+                                    className={`${row} ${on ? 'bg-accent-500/10 shadow-[inset_2px_0_0_0_rgb(var(--a-500))]' : 'hover:bg-gray-800/50'} ${g.supported ? '' : 'opacity-40'}`}>
+                                    <GameArt gameId={g.id} name={g.name} className={`w-16 h-[30px] rounded-sm shrink-0 ${g.supported ? '' : 'grayscale'}`} />
+                                    <span className="min-w-0 flex-1"><span className={`block font-medium truncate ${on ? 'text-white' : 'text-gray-100'}`}>{g.name}</span><span className="block mt-0.5 text-xs text-gray-500">{g.category}</span></span>
+                                    <span className="hidden sm:block text-xs text-gray-500 whitespace-nowrap">{plat(g)}</span>
+                                    {on && <Check size={15} className="text-accent-400 shrink-0" />}
                                 </button>
                             );
                         })}
+                        {shown.length === 0 && <div className="px-3 py-6 text-[13px] text-gray-400">No games match.</div>}
                     </div>
-                </div>
+                </Card>
 
-                <Card className="overflow-hidden lg:sticky lg:top-24">
+                <Card className="lg:sticky lg:top-16">
+                    <div className="h-10 px-4 flex items-center border-b border-gray-800 text-[13px] font-semibold text-gray-100">
+                        {game ? `New ${game.name} server${nodeId !== 'local' ? ` on ${machine.name}` : ''}` : 'New server'}
+                    </div>
                     {!game ? (
-                        <div className="py-16 px-6 text-center">
-                            <div className="w-16 h-16 mx-auto rounded-2xl grid place-items-center bg-accent-500/10 text-accent-300 ring-1 ring-accent-400/30 mb-4"><Download size={28} /></div>
-                            <div className="text-lg font-bold text-white">Pick a game</div>
-                            <div className="text-sm text-gray-400 mt-1">Its settings appear here.</div>
+                        <div className="px-4 py-10 text-center text-[13px] text-gray-400">
+                            <Download size={20} className="mx-auto mb-2 text-gray-500" />Pick a game from the list. Its settings appear here.
                         </div>
                     ) : (
-                        <>
-                        <GameArt gameId={game.id} name={game.name} className="h-36">
-                            <div className="absolute bottom-3 left-5 right-5">
-                                <div className="text-xs font-bold uppercase tracking-wider text-accent-200">New server{nodeId !== 'local' ? ` on ${machine.name}` : ''}</div>
-                                <div className="text-2xl font-black text-white drop-shadow">{game.name}</div>
-                            </div>
-                        </GameArt>
-                        <div className="p-6 space-y-5">
-                            {game.notes && <div className="text-sm text-accent-200">{game.notes}</div>}
+                        <div className="p-4 space-y-4">
+                            {game.notes && <div className="text-xs text-accent-300">{game.notes}</div>}
                             <VarFields fields={game.vars} values={vars} onChange={setVars} disabled={installing} />
-                            <label className={`flex items-center gap-3 p-3 rounded-xl ring-1 ${cache.status === 'ready' ? 'ring-white/15 cursor-pointer' : 'ring-white/[.06] opacity-60'}`}>
-                                <input type="checkbox" className="w-5 h-5 accent-ember-500" checked={useCache} onChange={e => setUseCache(e.target.checked)} disabled={installing || cache.status !== 'ready'} />
-                                <Zap size={18} className="text-ember-400" />
-                                <span className="text-sm font-semibold text-gray-100">{cache.status === 'ready' ? `Fast install from cache (${cache.diskSize || '?'})` : 'Not cached'}</span>
+                            <label className={`flex items-center gap-2.5 px-3 h-9 rounded border ${cache.status === 'ready' ? 'border-gray-700 cursor-pointer' : 'border-gray-800 opacity-60'}`}>
+                                <input type="checkbox" className="w-4 h-4 accent-accent-500" checked={useCache} onChange={e => setUseCache(e.target.checked)} disabled={installing || cache.status !== 'ready'} />
+                                <Zap size={14} className="text-accent-400" />
+                                <span className="text-xs text-gray-200">{cache.status === 'ready' ? `Fast install from cache (${cache.diskSize || '?'})` : 'Not cached'}</span>
                             </label>
                             <Button variant="primary" size="lg" className="w-full" onClick={install} disabled={installing}>
-                                <Download size={18} />{installing ? 'Installing… (can take a while)' : 'Install'}
+                                <Download size={15} />{installing ? 'Installing… (can take a while)' : 'Install'}
                             </Button>
                             {result && <Notice tone={result.ok ? 'ok' : 'error'}>{result.text}</Notice>}
                             {result?.ok && <Button className="w-full" onClick={onDone}>Go to servers</Button>}
                         </div>
-                        </>
                     )}
                 </Card>
             </div>
 
             {(installing || logs.length > 0) && (
-                <Card className="p-5 space-y-3">
-                    <div className="flex items-center justify-between text-sm font-semibold">
-                        <span className="text-gray-200">SteamCMD output</span>
+                <Card>
+                    <div className="h-10 px-4 flex items-center justify-between border-b border-gray-800 text-[13px] font-semibold">
+                        <span className="text-gray-100">SteamCMD output</span>
                         {progress !== null && <span className="text-white tabular-nums">{progress.toFixed(0)}%</span>}
                     </div>
-                    {progress !== null && <Meter value={progress} />}
-                    <pre ref={logRef} className="h-72 overflow-auto rounded-xl bg-gray-950/80 border border-white/[.06] p-4 font-mono text-xs text-gray-200 whitespace-pre-wrap">{logs.join('') || 'Starting…'}</pre>
+                    <div className="p-3 space-y-2">
+                        {progress !== null && <Meter value={progress} />}
+                        <pre ref={logRef} className="h-72 overflow-auto rounded bg-gray-950 border border-gray-800 p-3 font-mono text-xs text-gray-200 whitespace-pre-wrap">{logs.join('') || 'Starting…'}</pre>
+                    </div>
                 </Card>
             )}
         </div>

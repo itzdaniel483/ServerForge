@@ -3,23 +3,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* UI v3 (claude, 2026-10-30): flat, dense control panel. 14px root makes every rem-based size tighter. */
 :root { color-scheme: dark; }
+html { font-size: 14px; }
 html, body, #root { min-height: 100%; }
 body {
   @apply bg-gray-950 text-gray-100 antialiased;
-  font-feature-settings: "cv11", "ss01";
-  /* Two soft accent glows behind everything so the dark surface has depth. */
-  background-image:
-    radial-gradient(1200px 600px at 85% -10%, rgb(var(--a-600) / .16), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgb(var(--b-500) / .10), transparent 60%);
-  background-attachment: fixed;
+  font-feature-settings: "cv11", "ss01", "tnum";
 }
 ::selection { background: rgb(var(--a-400) / .35); }
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--g-700)) transparent; }
 .xterm .xterm-viewport { scrollbar-color: rgb(var(--g-700)) transparent; }
 
 @layer components {
-  /* Frosted panel used by cards and the sidebar. */
-  .glass { @apply bg-gray-900/70 backdrop-blur-xl border border-white/[.06] shadow-card; }
-  .text-gradient { @apply bg-gradient-to-r from-accent-300 to-accent2-300 bg-clip-text text-transparent; }
+  /* Panel surface (name kept from v2 so every screen picks up the flat style). */
+  .glass { @apply bg-gray-900 border border-gray-800; }
+  .text-gradient { @apply text-accent-400; }
+  .th { @apply px-3 h-8 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 border-b border-gray-800 whitespace-nowrap; }
+  .td { @apply px-3 h-11 border-b border-gray-800/70 align-middle; }
 }

@@ -37,7 +37,7 @@ export default function AccessManager({ server }) {
     const free = users.filter(u => !list.some(a => a.username === u.username));
 
     return (
-        <Card className="p-6 space-y-5 max-w-4xl">
+        <Card className="p-4 space-y-5 max-w-4xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 className="text-xl font-bold text-white">Who can use this server</h2>
