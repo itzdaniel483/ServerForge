@@ -23,6 +23,9 @@ export default function Installer({ onDone }) {
     const [logs, setLogs] = useState([]);
     const [result, setResult] = useState(null);
     const [nodes, setNodes] = useState([]);
+    // Game modes (Daniel #gamemanager 3576; contract #3584): e.g. Gmod Sandbox / TTT / DarkRP / Workshop collection.
+    const [mode, setMode] = useState('');
+    const [collection, setCollection] = useState('');
     const [nodeId, setNodeId] = useState('local');
     const logRef = useRef(null);
     const nodeQuery = nodeId === 'local' ? '' : `?node=${encodeURIComponent(nodeId)}`;
@@ -41,6 +44,7 @@ export default function Installer({ onDone }) {
     useEffect(() => {
         if (!game) return;
         setUseCache(false);
+        setMode(game.modes?.[0]?.id || ''); setCollection('');
         setVars(Object.fromEntries(game.vars.map(f => [f.key, f.default])));
         axios.get(`/api/cache/status/${game.appId}${nodeQuery}`).then(r => setCache(r.data)).catch(() => setCache({}));
     }, [game, nodeQuery]);
@@ -55,7 +59,7 @@ export default function Installer({ onDone }) {
         const event = nodeId === 'local' ? 'install-log' : `install-log-${nodeId}`;
         socket.on(event, onLog);
         try {
-            await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }) });
+            await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }), ...(mode ? { mode } : {}), ...(currentMode?.needsWorkshopKey && collection ? { workshopCollection: collection } : {}) });
             setResult({ ok: true, text: `${vars.name} is installed.` });
         } catch (err) {
             setResult({ ok: false, text: errorText(err) });
@@ -102,6 +106,7 @@ export default function Installer({ onDone }) {
         .filter(g => (category === 'All' || g.category === category) && g.name.toLowerCase().includes(filter.toLowerCase()))
         .sort((a, b) => (b.supported - a.supported) || a.name.localeCompare(b.name));
 
+    const currentMode = game?.modes?.find(m => m.id === mode);
     const plat = g => (g.platforms.includes('linux') && g.platforms.includes('win32') ? 'Linux, Windows' : g.platforms.includes('win32') ? 'Windows only' : 'Linux only');
     return (
         <div className="space-y-4">
@@ -159,6 +164,29 @@ export default function Installer({ onDone }) {
                     ) : (
                         <div className="p-4 space-y-4">
                             {game.notes && <div className="text-xs text-accent-300">{game.notes}</div>}
+                            {game.modes?.length > 0 && (
+                                <div role="radiogroup" aria-label="Game mode" className="space-y-1.5">
+                                    <div className="text-xs font-medium text-gray-300">Game mode</div>
+                                    {game.modes.map(m => (
+                                        <label key={m.id} className={`flex items-start gap-2.5 px-3 py-2 rounded border cursor-pointer ${mode === m.id ? 'border-accent-500 bg-accent-500/10' : 'border-gray-700 hover:border-gray-600'}`}>
+                                            <input type="radio" name="game-mode" className="mt-0.5 accent-accent-500" checked={mode === m.id} onChange={() => setMode(m.id)} disabled={installing} />
+                                            <span className="min-w-0">
+                                                <span className="block text-[13px] font-medium text-white">{m.name}</span>
+                                                {m.description && <span className="block text-xs text-gray-400">{m.description}</span>}
+                                                {m.downloads && <span className="block text-[11px] text-accent-300">Also downloads: {m.downloads}</span>}
+                                            </span>
+                                        </label>
+                                    ))}
+                                    {currentMode?.needsWorkshopKey && (
+                                        <label className="block pt-1">
+                                            <span className="block text-xs font-medium text-gray-300 mb-1">Workshop collection ID</span>
+                                            <input value={collection} onChange={e => setCollection(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="e.g. 123456789" disabled={installing}
+                                                className="w-full h-8 bg-gray-950 text-white text-[13px] px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
+                                            <span className="block text-[11px] text-gray-500 mt-1">The number at the end of the collection's Steam link. Uses the Steam Web API key from Settings.</span>
+                                        </label>
+                                    )}
+                                </div>
+                            )}
                             <VarFields fields={game.vars} values={vars} onChange={setVars} disabled={installing} />
                             <label className={`flex items-center gap-2.5 px-3 h-9 rounded border ${cache.status === 'ready' ? 'border-gray-700 cursor-pointer' : 'border-gray-800 opacity-60'}`}>
                                 <input type="checkbox" className="w-4 h-4 accent-accent-500" checked={useCache} onChange={e => setUseCache(e.target.checked)} disabled={installing || cache.status !== 'ready'} />
