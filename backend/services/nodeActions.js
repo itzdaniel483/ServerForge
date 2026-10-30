@@ -22,6 +22,8 @@ const definitions = {
     'tasks.list': ['GET', '/api/server/:serverId/tasks'], 'tasks.create': ['POST', '/api/server/:serverId/tasks', ['type', 'cron', 'command', 'label', 'enabled']],
     'tasks.update': ['PUT', '/api/tasks/:taskId', ['type', 'cron', 'command', 'label', 'enabled']], 'tasks.delete': ['DELETE', '/api/tasks/:taskId'], 'tasks.run': ['POST', '/api/tasks/:taskId/run'],
     'settings.read': ['GET', '/api/server/:serverId/settings'], 'settings.write': ['PUT', '/api/server/:serverId/settings', ['vars', 'autoRestart']],
+    'launch.read': ['GET', '/api/server/:serverId/launch'], 'launch.preview': ['POST', '/api/server/:serverId/launch/preview', ['template', 'customArgs']],
+    'launch.write': ['PUT', '/api/server/:serverId/launch', ['template', 'customArgs']],
     'config.write': ['PUT', '/api/server/:serverId/config', ['executable', 'args']], 'schedule.write': ['POST', '/api/server/:serverId/schedule', ['schedule']],
     update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId'],
     install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port']],

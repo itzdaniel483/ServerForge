@@ -475,6 +475,47 @@ app.get('/api/server/:id/settings', (req, res) => {
     res.json({ fields, vars, autoRestart: srv.autoRestart !== false, configFile: game?.configFile || null, notes: game?.notes || null });
 });
 
+// Command line (claude, Daniel #gamemanager 3576, contract #3581): admin-only template + custom parameters with a
+// preview. The RCON password is never shown in the preview. Servers not from the catalogue edit their raw args.
+function launchView(srv, template, customArgs) {
+    const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+    const shown = { ...catalog.launchValues(game ? srv.vars : { port: srv.port }, srv), rconpassword: '••••' };
+    const def = game ? catalog.defaultTemplate(game) : (srv.args || []).map(catalog.quoteArg).join(' ');
+    const tpl = template === undefined ? (game ? (srv.launchTemplate ?? null) : def) : template;
+    const custom = customArgs === undefined ? (game ? (srv.customArgs || '') : '') : customArgs;
+    const { rconpassword, ...variables } = shown;
+    return { game, def, executable: srv.executable || '', template: tpl, defaultTemplate: def, customArgs: custom, variables: { ...variables, rconpassword: '(hidden)' },
+        preview: catalog.renderArgs(tpl ?? def, custom, shown) };
+}
+const launchError = (res, err) => res.status(err.status || 400).json({ error: err.message, ...(err.at !== undefined ? { at: err.at } : {}), code: err.code || 'LAUNCH_TEMPLATE_INVALID' });
+app.get('/api/server/:id/launch', requireAdmin, (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    try { const { game, def, ...view } = launchView(srv); res.json(view); } catch (err) { launchError(res, err); }
+});
+app.post('/api/server/:id/launch/preview', requireAdmin, (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const { template, customArgs } = req.body || {};
+    try { const { preview } = launchView(srv, template ?? null, typeof customArgs === 'string' ? customArgs : ''); res.json({ preview }); } catch (err) { launchError(res, err); }
+});
+app.put('/api/server/:id/launch', requireAdmin, async (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const { template = null, customArgs = '' } = req.body || {};
+    if ((template !== null && typeof template !== 'string') || typeof customArgs !== 'string') return res.status(400).json({ error: 'Send the template and custom parameters as text', code: 'LAUNCH_TEMPLATE_INVALID' });
+    try {
+        const { game, def } = launchView(srv, template, customArgs);   // validates both
+        const values = catalog.launchValues(game ? srv.vars : { port: srv.port }, srv);
+        const tpl = template !== null && template.trim() === def.trim() ? null : template;
+        const args = catalog.renderArgs(tpl ?? def, customArgs, values);
+        await serverStore.update(srv.id, game ? { launchTemplate: tpl, customArgs, args } : { args });
+        audit(req, 'settings', srv, 'Command line changed');
+        const { game: _g, def: _d, ...view } = launchView(serverStore.get(srv.id));
+        res.json(view);
+    } catch (err) { launchError(res, err); }
+});
+
 app.post('/api/server/start', async (req, res) => {
     const { id } = req.body || {};
     const srv = serverStore.get(id);

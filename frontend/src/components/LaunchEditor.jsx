@@ -14,6 +14,7 @@ const box = 'w-full bg-gray-950 text-gray-100 font-mono text-[13px] leading-rela
 export default function LaunchEditor({ server }) {
     const [data, setData] = useState(null);          // GET /launch result
     const [missing, setMissing] = useState(false);   // backend not there yet: old editor
+    const [outdated, setOutdated] = useState(false); // a node on an older ServerForge (no launch actions yet)
     const [template, setTemplate] = useState('');
     const [custom, setCustom] = useState('');
     const [preview, setPreview] = useState({ args: [], error: null });
@@ -28,7 +29,7 @@ export default function LaunchEditor({ server }) {
             if (!alive) return;
             setData(r.data); setTemplate(r.data.template ?? r.data.defaultTemplate ?? ''); setCustom(r.data.customArgs || '');
             setPreview({ args: r.data.preview || [], error: null });
-        }).catch(err => { if (alive) { if (err?.response?.status === 404) setMissing(true); else setMsg({ ok: false, text: errorText(err) }); } });
+        }).catch(err => { if (alive) { if (err?.response?.status === 404) setMissing(true); else if (err?.response?.status === 501) setOutdated(true); else setMsg({ ok: false, text: errorText(err) }); } });
         return () => { alive = false; };
     }, [id]);
 
@@ -62,6 +63,7 @@ export default function LaunchEditor({ server }) {
     }
 
     if (missing) return <CommandEditor serverId={server.id} serverData={server} />;
+    if (outdated) return <Notice>This machine needs a ServerForge update before its command line can be edited here. Update it from the Nodes page (or re-run Setup on it).</Notice>;
     if (!data) return <div className="text-[13px] text-gray-400">{msg?.text || 'Loading command line…'}</div>;
 
     const isDefault = (data.template ?? null) === null && template === (data.defaultTemplate ?? '');

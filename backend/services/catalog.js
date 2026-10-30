@@ -75,15 +75,61 @@ function cleanVars(game, input = {}) {
 }
 
 // Fill {{tokens}}. rconpassword comes from the server record (generated), never from the client.
+// Command-line templates (claude, Daniel #gamemanager 3576, contract #3581): TCAdmin-style text such as
+// `-console +map {map} +port {port}` plus free custom parameters. Split on spaces with "double quotes" for grouping;
+// {var} is replaced inside its own argument, so a value with spaces never becomes extra arguments. No shell is ever
+// involved (spawn gets an argv array) and the program itself is never chosen here.
+const TEMPLATE_MAX = 2000, CUSTOM_MAX = 1000, ARGS_MAX = 120;
+const badTemplate = (message, at) => Object.assign(new Error(message), { status: 400, code: 'LAUNCH_TEMPLATE_INVALID', at });
+function tokenize(text, max) {
+    if (typeof text !== 'string') throw badTemplate('The command line must be text');
+    if (text.length > max) throw badTemplate(`Keep it under ${max} characters`);
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text)) throw badTemplate('Remove control characters');
+    const out = []; let cur = '', quoted = false, started = false, openAt = -1;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') { quoted = !quoted; started = true; if (quoted) openAt = i; continue; }
+        if (!quoted && /\s/.test(c)) { if (started) { out.push(cur); cur = ''; started = false; } continue; }
+        cur += c; started = true;
+    }
+    if (quoted) throw badTemplate('A quote (") is not closed', openAt);
+    if (started) out.push(cur);
+    return out;
+}
+function fillToken(token, values) {
+    return token.replace(/\{(\w*)\}/g, (whole, k) => {
+        if (!Object.hasOwn(values, k)) throw badTemplate(`Unknown variable {${k}}`);
+        return String(values[k] ?? '');
+    });
+}
+const quoteArg = a => (a === '' || /[\s"]/.test(a) ? `"${a.replace(/"/g, '')}"` : a);
+// The game's own default as editable text: {{var}} placeholders become {var}.
+function defaultTemplate(game) {
+    const spec = game?.[platformKey()];
+    return spec ? spec.args.map(a => quoteArg(String(a).replace(/\{\{(\w+)\}\}/g, '{$1}'))).join(' ') : '';
+}
+function launchValues(vars, server = {}) {
+    const values = { ...(vars || {}), rconpassword: server.rconPassword || '' };
+    for (const k of Object.keys(values)) if (values[k] === undefined || values[k] === null) values[k] = '';
+    return values;
+}
+function renderArgs(template, customArgs, values) {
+    const args = [...tokenize(template, TEMPLATE_MAX), ...tokenize(customArgs || '', CUSTOM_MAX)].map(t => fillToken(t, values));
+    if (args.length > ARGS_MAX) throw badTemplate(`Too many arguments (max ${ARGS_MAX})`);
+    return args;
+}
+
 function buildLaunch(game, vars, server = {}) {
     const p = platformKey();
     const spec = game[p];
     if (!spec) throw Object.assign(new Error(`${game.name} has no ${p === 'win32' ? 'Windows' : 'Linux'} server`), { status: 400 });
-    const values = { ...vars, rconpassword: server.rconPassword || '' };
+    const values = launchValues(vars, server);
     const fill = s => String(s).replace(/\{\{(\w+)\}\}/g, (_, k) => (values[k] === undefined ? '' : String(values[k])));
+    // A saved template / custom parameters survive settings changes; only the variable values are refreshed.
+    const custom = typeof server.launchTemplate === 'string' || (typeof server.customArgs === 'string' && server.customArgs.trim());
     return {
         executable: spec.executable,
-        args: spec.args.map(fill),
+        args: custom ? renderArgs(server.launchTemplate ?? defaultTemplate(game), server.customArgs || '', values) : spec.args.map(fill),
         env: spec.env || {},
         cwd: spec.cwd || '',
     };
@@ -91,4 +137,4 @@ function buildLaunch(game, vars, server = {}) {
 
 const newRconPassword = () => crypto.randomBytes(12).toString('base64url');
 
-module.exports = { list, get, findByAppId, cleanVars, buildLaunch, newRconPassword, platformKey, VARS };
+module.exports = { list, get, findByAppId, cleanVars, buildLaunch, newRconPassword, platformKey, VARS, tokenize, renderArgs, defaultTemplate, launchValues, quoteArg, TEMPLATE_MAX, CUSTOM_MAX };
