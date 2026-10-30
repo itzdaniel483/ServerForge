@@ -85,6 +85,9 @@ $env:DATA_DIR = Join-Path $DataDir 'data'
 $env:NODE_LOCAL_API_URL = 'http://127.0.0.1:3230'
 $pair = Start-Process -FilePath $nodeExe -ArgumentList @("`"$(Join-Path $InstallDir 'app\backend\node-client.js')`"", 'pair', "`"$PairingFile`"", '--until-approved') `
     -RedirectStandardOutput $out -RedirectStandardError "$out.err" -NoNewWindow -PassThru
+# Windows PowerShell only fills in ExitCode later if the process handle was opened while it ran (Daniel 3539:
+# the PC was approved, then setup reported 'Not approved' because ExitCode came back empty).
+$null = $pair.Handle
 $fingerprint = $null
 for ($i = 0; $i -lt 60 -and -not $fingerprint -and -not $pair.HasExited; $i++) {
     Start-Sleep -Milliseconds 500
@@ -110,7 +113,8 @@ Say '  Waiting for approval (the pairing file expires 10 minutes after it was ma
 $pair.WaitForExit()
 $pairLog = (Get-Content $out, "$out.err" -ErrorAction SilentlyContinue) -join "`n"
 Remove-Item $out, "$out.err" -Force -ErrorAction SilentlyContinue
-if ($pair.ExitCode -ne 0) { Fail "Not approved: $pairLog" }
+# Approved = exit 0, or the client's own APPROVED line if the exit code still isn't available.
+if (-not ($pair.ExitCode -eq 0 -or ($pair.ExitCode -eq $null -and $pairLog -match '(?m)^APPROVED'))) { Fail "Not approved: $pairLog" }
 
 # The pairing file is single-use and now spent; don't leave it lying around.
 Remove-Item $PairingFile -Force -ErrorAction SilentlyContinue
