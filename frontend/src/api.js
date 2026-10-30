@@ -19,4 +19,11 @@ export function getSocket() {
     return socket;
 }
 
+// End the session and show `notice` on the sign-in screen (e.g. after a password change,
+// which makes the server refuse every older token, including this browser's).
+export function signOut(notice) {
+    if (notice) sessionStorage.setItem('loginNotice', notice);
+    window.dispatchEvent(new Event('serverforge:signout'));
+}
+
 export const errorText = err => err?.response?.data?.error || err?.message || 'Something went wrong';

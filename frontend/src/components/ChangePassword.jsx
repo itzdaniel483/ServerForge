@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Lock, Check, AlertCircle } from 'lucide-react';
+import { signOut } from '../api';
 
 function ChangePassword() {
     const [currentPassword, setCurrentPassword] = useState('');
@@ -37,10 +38,8 @@ function ChangePassword() {
                 newPassword
             });
 
-            setMessage({ type: 'success', text: 'Password changed successfully!' });
-            setCurrentPassword('');
-            setNewPassword('');
-            setConfirmPassword('');
+            // The server has ended every session for this account, this one included.
+            signOut('Password changed. Sign in with your new password.');
         } catch (err) {
             setMessage({
                 type: 'error',

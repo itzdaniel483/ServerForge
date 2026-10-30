@@ -20,7 +20,8 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Scheduler 5-minute gap enforced for cron ranges/lists (codex finding)
 - [x] Revoking server access evicts live-log sockets (codex)
 - [x] Deleting/renaming/demoting a user disconnects their live sockets (codex)
-- [ ] Password change or reset should end existing sessions (JWT still valid)
+- [x] Password change ends every existing session; UI signs out with a notice (codex backend, claude UI)
+- [ ] Any future password-reset path must bump sessionVersion
 - [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
 - [x] Real install verified end to end: Valheim installed (2.1 GB), started, listening, stopped (2026-10-30)
 - [x] Valheim UDP 2456-2457 open to .109/.134/.217 only (Daniel, 2026-10-30); join details in console outbox

@@ -55,6 +55,11 @@ function App() {
         setTab('servers');
     }, []);
 
+    useEffect(() => {
+        window.addEventListener('serverforge:signout', logout);
+        return () => window.removeEventListener('serverforge:signout', logout);
+    }, [logout]);
+
     // Any 401 after login (expired token, deleted user) returns to the login screen.
     useEffect(() => {
         const id = axios.interceptors.response.use(r => r, err => {

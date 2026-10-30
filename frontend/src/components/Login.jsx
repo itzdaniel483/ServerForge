@@ -12,6 +12,11 @@ function Login({ authMode, onLogin }) {
     const [password, setPassword] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [notice] = useState(() => {
+        const text = sessionStorage.getItem('loginNotice');
+        sessionStorage.removeItem('loginNotice');
+        return text || '';
+    });
 
     async function submit(e) {
         e.preventDefault();
@@ -54,6 +59,7 @@ function Login({ authMode, onLogin }) {
                     ) : (
                         <form onSubmit={submit} className="space-y-5">
                             <h2 className="text-3xl font-bold text-white mb-2">Sign in</h2>
+                            {notice && !error && <Notice tone="ok">{notice}</Notice>}
                             {error && <Notice>{error}</Notice>}
                             <Field label="Username">
                                 <input className={inputClass} value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" autoFocus required />
