@@ -16,6 +16,7 @@ import { getSocket, errorText } from '../api';
 import { Button, Card, Status, Stat, Notice, GameArt, Tabs } from '../ui';
 import { themeColor } from '../theme';
 import { NodeBadge } from '../nodes';
+import { MoveButton } from './MoveServer';
 import { can, isRemote, nodeOffline } from '../nodeUtils';
 
 // Server page (claude, UI v3 2026-10-30): one compact header row (thumbnail, name, status, address,
@@ -189,6 +190,7 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                     ) : (
                         <Button variant="go" onClick={() => power(['start'])}><Play size={14} />Start</Button>
                     )}
+                    {isAdmin && !offline && status !== 'installing' && <MoveButton server={server} onMoved={onDeleted} />}
                     {admin('delete') && <Button variant="quiet" onClick={remove} title="Delete server" aria-label="Delete server"><Trash2 size={14} /></Button>}
                 </div>
             </Card>
