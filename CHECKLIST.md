@@ -60,7 +60,8 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 ## Multi-node (2026-10-30, Daniel: "combine windows and linux servers")
 Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Design draft 1: hub + nodes, nodes dial out, explicit enrolment + approve, allow-listed messages
-- [ ] Daniel + codex agree the design (and Daniel answers: first Windows PC? LAN only?)
+- [x] Daniel: LAN first, outside nodes later (node endpoint kept separate so it can be published alone)
+- [ ] codex agrees the protocol; Daniel names the first Windows PC (IP)
 - [ ] Phase 1: node mode, pairing, link (codex); Nodes page (claude)
 - [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
 - [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)

@@ -94,7 +94,13 @@ All other per-server routes stay the same. The router picks local or remote from
 3. Power + console commands, then files, backups, tasks, cache, install.
 4. Windows node packaging (the existing `installers/` and `package.ps1`), with a test on a real Windows PC.
 
-## Questions for Daniel
+## Decisions
 
-1. Which Windows machine will be the first node, and is it on the same LAN (192.168.55.x)?
-2. Should the hub be reachable only on the LAN (as now), or also from outside (for example, a node at a friend's house)? That changes how we expose the hub.
+- **2026-10-30, Daniel: "On the LAN, but allow outside nodes later."**
+  - Phase 1–4 are LAN only. Nodes connect to `wss://192.168.55.216:<hub port>`, and UFW allows only the listed node IPs.
+  - Later, an outside node needs the hub reachable from the internet. Plan: publish **only the node endpoint** (not the web panel) through a Cloudflare Tunnel or a dedicated port, still with key login, pinned TLS and admin approval. Nodes already dial out, so outside nodes need no changes on their side.
+  - Keep the node endpoint on its own path or port from day one so it can be published alone later.
+
+## Still open
+
+1. Which Windows PC will be the first node (its LAN IP, for the UFW rule)?
