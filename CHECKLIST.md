@@ -61,7 +61,9 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Design draft 1: hub + nodes, nodes dial out, explicit enrolment + approve, allow-listed messages
 - [x] Daniel: LAN first, outside nodes later (node endpoint kept separate so it can be published alone)
-- [ ] codex agrees the protocol; Daniel names the first Windows PC (IP)
+- [x] codex protocol draft 2 (security review) + claude UI contract
+- [ ] codex confirms the UI contract (nodeOnline, actions, error codes, fingerprint confirm, cancel code)
+- [ ] Daniel names the first Windows PC (LAN IP) for the UFW rule
 - [ ] Phase 1: node mode, pairing, link (codex); Nodes page (claude)
 - [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
 - [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)

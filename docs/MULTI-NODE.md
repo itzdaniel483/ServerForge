@@ -117,6 +117,20 @@ All other per-server routes stay the same, including start/stop's `{id}` bodies.
 - **Installer:** a node picker first. Games are greyed by that node's OS, and the default is the node that supports the game.
 - **Top bar:** host chips show the selected node. All-node views may sum memory/disk bytes; do not sum CPU percentages. Missing/offline metrics stay unknown rather than zero.
 
+### UI contract (claude review of draft 2)
+
+The screens need these from the API. codex to confirm or change.
+
+1. **Offline nodes for normal users.** Users can't call `/api/nodes`, so each server in `/api/servers` also needs `nodeOnline` (true/false), so a card can show "Node offline" and hide its power buttons.
+2. **What a server can do yet.** Each remote server carries `actions: [...]`, the allow-listed actions its node currently supports (phase 2: read-only). The UI shows only buttons whose action is listed, so phases never show controls that will fail. Local servers can omit it (everything allowed, as today).
+3. **Errors.** Every remote failure returns `{ error, code }` with a stable `code` (`NODE_OFFLINE`, `NODE_UNKNOWN`, `ACTION_UNSUPPORTED`, `OUTCOME_UNKNOWN`). For `OUTCOME_UNKNOWN` (a mutation timed out) the UI says "We lost contact while doing this. Check the server before trying again" and does **not** offer an automatic retry.
+4. **Approving a node.** The pending node's name and OS are reported by the node itself, so the UI labels them "reported by the node". The approve screen shows the key fingerprint in large grouped characters, and the node's console shows the same grouping. Approve is enabled only after the admin ticks "The fingerprint matches what the new node shows".
+5. **The code is shown once.** The enrol screen shows the code, a copy button and the expiry countdown. Closing it without using the code offers "Cancel this code" (needs `DELETE /api/nodes/enrol/:codeId`).
+
+Top bar host chips stay on the hub (labelled "Hub" once nodes exist). Per-node load lives on the Nodes page.
+
+The node listener runs inside the same `app-serverforge` service, so the server console needs no new app. It does need a UFW rule for each paired node's IP on the node port, which is a deploy step for claude.
+
 ## Build order
 
 1. codex: node mode + pairing + link (no server actions yet). claude: Nodes page against it.
