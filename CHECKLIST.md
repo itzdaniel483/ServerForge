@@ -56,3 +56,12 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Login: gradient hero
 - [x] Daniel picked Steel as default (2026-10-30)
 - [x] Inner tools (Files, Backups, Schedule, Plugins, Updates, Settings) on the v2 kit: frosted panels, gradient buttons, pill tabs; duplicate Settings title removed
+
+## Multi-node (2026-10-30, Daniel: "combine windows and linux servers")
+Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
+- [x] Design draft 1: hub + nodes, nodes dial out, explicit enrolment + approve, allow-listed messages
+- [ ] Daniel + codex agree the design (and Daniel answers: first Windows PC? LAN only?)
+- [ ] Phase 1: node mode, pairing, link (codex); Nodes page (claude)
+- [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
+- [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)
+- [ ] Phase 4: Windows node package + test on a real Windows PC
