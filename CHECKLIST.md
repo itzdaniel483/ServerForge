@@ -22,7 +22,7 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [ ] Deleting/demoting a user drops their live sockets (follow-up)
 - [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
 - [x] Real install verified end to end: Valheim installed (2.1 GB), started, listening, stopped (2026-10-30)
-- [ ] Open Valheim UDP 2456-2457 in UFW for LAN play (ask Daniel which devices)
+- [x] Valheim UDP 2456-2457 open to .109/.134/.217 only (Daniel, 2026-10-30); join details in console outbox
 - [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
 
 ## Phase 2: hosting features
