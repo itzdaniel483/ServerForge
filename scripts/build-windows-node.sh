@@ -70,6 +70,9 @@ echo "$WINSW_SHA256  $CACHE/WinSW.NET461.exe" | sha256sum -c --quiet - || { echo
 cp "$CACHE/WinSW.NET461.exe" "$PKG/service/WinSW.exe"
 cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt} "$PKG/"
 
+# Optional release note shipped with the app (also changes the version): RELEASE_NOTE="..." scripts/build-windows-node.sh
+if [ -n "${RELEASE_NOTE:-}" ]; then printf '%s\n%s\n' "$(date -u +%FT%TZ)" "$RELEASE_NOTE" > "$PKG/app/RELEASE.txt"; fi
+
 # 4a. Version stamp + update signing key (one-click updates, Daniel 3591/3595).
 VERSION="$(cd "$PKG/app" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
 echo "$VERSION" > "$PKG/app/VERSION"
