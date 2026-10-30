@@ -91,9 +91,11 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Daniel approved v3 ("Looks good", 14:36): sidebar stays
 
 ## Daniel 2026-10-30 16:53 (#gamemanager 3576): after the Windows node joined
-- [ ] 1. Install reports "Installed" only when SteamCMD says fully installed; retry/incomplete state (codex) — Gmod on Windows node was half-installed
-- [ ] 2. TCAdmin-style command line: template with {vars} + custom parameters that survive settings saves + preview/reset (codex engine; claude UI done da9127b, mock 9/9)
+- [x] 1. Install reports "Installed" only on the requested app's success line; one retry with validate (codex start, claude finish 36c4493) LIVE
+- [x] 2. TCAdmin-style command line LIVE (claude backend a9d7353 + UI); remote via launch.* actions
 - [ ] 3. Game-mode presets at install (Gmod: Sandbox, TTT, DarkRP + auto-download, Prop Hunt, Murder, Workshop collection) (codex install; claude picker done 46bc981, mock 8/8)
 - [ ] 4. Move a server between nodes: fresh install + configs/saves (Daniel 3580) (codex transfer; claude "Move to…" UI done, mock 7/7; deploy only with backend)
 - [x] Windows node DESKTOP-PSDC77U ONLINE on live (install+cache)
 - [x] Windows Setup fixes during the VM test: hidden ProgramData, LocalService via WMI, leftover service, stale identity + .bak, PS 5.1 exit code; build parses every .ps1
+- [x] 5. One-click node updates (Daniel 3591): signed package push + SYSTEM updater with rollback (e508a80); live push e2e to a throwaway node OK; Windows apply untested until Daniel runs the new Setup once
+- [ ] 5b. Daniel runs Setup once → publish a test update → he tries Update
