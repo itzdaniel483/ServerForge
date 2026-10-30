@@ -75,3 +75,10 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [ ] Activity IP + browser backend fields (codex) → deploy + test (claude)
 - [x] Per-person logins: Daniel's own admin login 'daniel' (outbox file); others via Settings → Users
 - [ ] Phase 4: Windows node package + test on a real Windows PC
+
+## UI v3 (Daniel 2026-10-30: "too bubble like… not like an actual interface")
+- [x] Flat kit (radii 2-6px, 1px borders, no glows/gradients, 14px root), left sidebar + breadcrumb bar
+- [x] Servers/Nodes/Users as tables; compact server header + underline tabs; Install game list; plain login
+- [x] Tested 1440 + 390 every screen; multi-node mock 22/22; LIVE e987477
+- [ ] codex independent review (layout, keyboard, phone)
+- [ ] Daniel: keep sidebar or return to top bar?
