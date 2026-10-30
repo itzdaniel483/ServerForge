@@ -170,6 +170,40 @@ sequenceDiagram
 | Install | `/api/nodes[].actions` has `install`, `/api/games?node=` | machine picker; a game the machine can't run offers "Install on <machine>" with the right OS; POST carries `nodeId` |
 | Manage Cache | `/api/nodes[].actions` has `cache`, `?node=` on every cache call | machine picker; each machine's cache separate |
 
+## Phase 4: Windows installer (claude Setup + build, codex service)
+
+One zip, one double-click. Built here on Linux by `scripts/build-windows-node.sh` (all backend dependencies are plain JS):
+
+```
+ServerForge-Node-Setup.zip
+  Setup.cmd / Uninstall.cmd   double-click; ask for admin, run setup.ps1
+  setup.ps1                   claude: checks, pairing-file picker, copy, SteamCMD, fingerprint screen
+  runtime\node.exe            Node.js win-x64, pinned version, SHA-256 checked against nodejs.org
+  app\backend, app\frontend   production modules only; no data, tests or secrets
+  service\                    codex: Install-/Uninstall-ServerForgeService.ps1 (Windows service)
+```
+
+```mermaid
+sequenceDiagram
+    participant A as Admin (panel)
+    participant S as Setup.cmd on the Windows PC
+    participant W as Windows service (codex)
+    participant H as Hub :3231
+    A->>A: Nodes > Add node > Download file
+    A->>S: copy pairing file + zip to the PC
+    S->>S: checks: Win10+/64-bit/disk; file valid + not expired; can reach hub:3231
+    S->>S: copy to Program Files; data in ProgramData (Administrators + SYSTEM only)
+    S->>S: SteamCMD from Valve, Authenticode signature must be Valve's
+    S->>W: Install-ServerForgeService (local panel + node link, auto-start)
+    S->>H: node-client pair --until-approved (pinned hub cert)
+    S-->>A: FINGERPRINT shown large on the PC
+    A->>H: Approve after ticking "fingerprint matches"
+    H-->>S: approved, exit 0
+    S->>S: delete the spent pairing file, restart the link service
+```
+
+Failure messages are written for the person at the PC: expired file, can't reach the panel (prints this PC's IP so it can be allowed in UFW), missing files (zip not fully unzipped), SteamCMD signature wrong. Nothing changes on the panel until Approve.
+
 ## Build order
 
 1. codex: node mode + pairing + link (no server actions yet). claude: Nodes page against it.

@@ -75,6 +75,11 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [ ] Activity IP + browser backend fields (codex) → deploy + test (claude)
 - [x] Per-person logins: Daniel's own admin login 'daniel' (outbox file); others via Settings → Users
 - [ ] Phase 4: Windows node package + test on a real Windows PC
+  - [x] Setup.cmd/Uninstall.cmd/setup.ps1 (claude; parses on pwsh 7.6, ScriptAnalyzer clean apart from Write-Host style)
+  - [x] scripts/build-windows-node.sh: bundled Node v22.23.3 win-x64 (SHA-256 checked), prod modules, frontend; draft zip 38 MB, no secrets
+  - [x] Nodes page "Add node" explains the Windows Setup; docs/MULTI-NODE.md phase 4 diagram
+  - [ ] codex: service/Install-/Uninstall-ServerForgeService.ps1, `pair --until-approved` + FINGERPRINT line, Windows process/path/RCON fixes
+  - [ ] Final build to Outbox + Daniel's VM test (step list) + UFW rule for the VM IP on 3231 (claude)
 
 ## UI v3 (Daniel 2026-10-30: "too bubble like… not like an actual interface")
 - [x] Flat kit (radii 2-6px, 1px borders, no glows/gradients, 14px root), left sidebar + breadcrumb bar

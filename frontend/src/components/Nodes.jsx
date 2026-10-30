@@ -156,9 +156,9 @@ function EnrolPanel({ enrolment, onClose, onError }) {
                 </li>
                 <li className="glass rounded-xl p-4 space-y-2">
                     <div className="font-bold text-white">2. Join from the new machine</div>
-                    <div className="text-gray-400">In its ServerForge <span className="font-mono text-gray-200">backend</span> folder run:</div>
-                    <div className="font-mono text-xs text-gray-100 bg-gray-950/80 rounded-lg p-2 break-all">npm run node:pair -- path/to/serverforge-enrolment.json</div>
-                    <div className="text-gray-400">It prints a fingerprint.</div>
+                    <div className="text-gray-400"><b className="text-gray-200">Windows PC:</b> unzip <span className="font-mono text-gray-200">ServerForge-Node-Setup.zip</span> (server console Outbox), double-click <span className="font-mono text-gray-200">Setup.cmd</span> and pick this file. It installs everything and shows a fingerprint.</div>
+                    <div className="text-gray-400"><b className="text-gray-200">Linux:</b> in its ServerForge <span className="font-mono text-gray-200">backend</span> folder run</div>
+                    <div className="font-mono text-xs text-gray-100 bg-gray-950 rounded p-2 break-all">npm run node:pair -- path/to/serverforge-enrolment.json</div>
                 </li>
                 <li className="glass rounded-xl p-4 space-y-2">
                     <div className="font-bold text-white">3. Approve it here</div>
