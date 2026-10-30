@@ -9,6 +9,8 @@ flowchart LR
         AUTH --> ACL[access.js<br/>per-server permissions]
         ACL --> ROUTES[Routes]
         ROUTES --> CAT[catalog.js<br/>games.json → launch line]
+        ROUTES --> ART[gameArt<br/>cached Steam headers]
+        ROUTES --> HOST[hostMetrics<br/>CPU delta + RAM + volume bytes]
         ROUTES --> PM[processManager<br/>start / stop / crash restart]
         ROUTES --> SCH[schedulerService<br/>cron tasks]
         ROUTES --> BK[backupService]
@@ -34,5 +36,9 @@ flowchart LR
 - Every change is written to the activity log.
 
 **State:** `DATA_DIR` holds `users.json`, `servers.json`, `tasks.json`, `activity.jsonl`, `jwt-secret` and `initial-admin-password`. All are owner-only files.
+
+**Dashboard data:** authenticated `/api/host` is available to admins and users with server view access. It returns CPU percent from a two-second sample and memory/disk used/total in bytes; unavailable values are null. `/api/servers` adds nullable `players`/`maxPlayers` from recent game queries, cleared on failure or process changes and expired after 30 seconds. Queries finishing for replaced processes are discarded.
+
+**Game artwork:** catalogue `storeAppId` identifies the storefront game, separate from the dedicated-server `appId`. Authenticated `/api/art/:gameId` serves cached JPEG headers from `DATA_DIR/game-art`. Only numeric catalogue IDs reach the fixed Steam CDN URL; downloads have size/time limits and no redirects. Missing art returns 404 for a UI fallback. Local-login clients fetch images with their bearer token before creating a browser object URL.
 
 **Password changes:** local accounts persist a `sessionVersion`, included in login tokens and socket identities. A successful password change increments it, so prior HTTP tokens and socket handshakes are refused and existing sockets disconnect. The changing browser must sign in again. Legacy accounts/tokens without a version use 0 until their first password change. Cloudflare authentication is unchanged; any future password-reset path must also increment the version.

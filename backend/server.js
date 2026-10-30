@@ -18,6 +18,8 @@ const cron = require('node-cron');
 const crypto = require('crypto');
 const catalog = require('./services/catalog');
 const access = require('./services/access');
+const hostMetrics = require('./services/hostMetrics');
+const querySnapshot = require('./services/querySnapshot');
 const schedulerService = require('./services/schedulerService');
 const backupService = require('./services/backupService');
 const cacheService = require('./services/cacheService');
@@ -257,9 +259,25 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 
 app.get('/api/servers', (req, res) => {
     // Users only see servers they can access; secrets and host paths are for admins only.
-    const all = serverStore.getAll();
+    const all = serverStore.getAll().map(s => ({ ...s, ...querySnapshot.get(s.id, processManager.getStatus(s.id) === 'running') }));
     if (req.user?.role === 'admin') return res.json(all.map(s => ({ ...s, perms: access.PERMS })));
     res.json(all.filter(s => access.can(req.user, s, 'view')).map(({ rconPassword, path: _p, env, access: _a, vars, ...s }) => ({ ...s, perms: access.permsFor(req.user, { ...s, access: _a }) })));
+});
+
+app.get('/api/host', async (req, res) => {
+    if (req.user.role !== 'admin' && !serverStore.getAll().some(s => access.can(req.user, s, 'view'))) {
+        return res.status(403).json({ error: 'Server access required' });
+    }
+    res.json(await hostMetrics.snapshot());
+});
+
+app.get('/api/art/:gameId', async (req, res) => {
+    try {
+        const art = await require('./services/gameArt').getArt(req.params.gameId);
+        if (!art) return res.status(404).end();
+        res.setHeader('Cache-Control', 'private, max-age=86400');
+        res.type(art.mime).sendFile(art.path);
+    } catch { res.status(404).end(); }
 });
 
 // Admin: who else can use this server, and what they can do.
@@ -1130,6 +1148,7 @@ processManager.on('log', ({ id, data }) => {
 });
 
 processManager.on('status-change', async ({ id, status }) => {
+    querySnapshot.clear(id);
     await serverStore.updateStatus(id, status);
     toServer(id).emit(`server-status-${id}`, status);
 });
@@ -1152,16 +1171,22 @@ processManager.on('stats', ({ id, stats }) => {
 });
 
 const queryService = require('./services/queryService');
+const queriesInFlight = new Set();
 
 // Query loop
 setInterval(async () => {
     const servers = serverStore.getAll();
     for (const srv of servers) {
-        if (processManager.getStatus(srv.id) === 'running') {
-            const result = await queryService.query(srv);
-            if (result && result.online) {
-                toServer(srv.id).emit(`server-query-${srv.id}`, result);
-            }
+        if (processManager.getStatus(srv.id) === 'running' && !queriesInFlight.has(srv.id)) {
+            const entry = processManager.processes.get(srv.id);
+            queriesInFlight.add(srv.id);
+            try {
+                const result = await queryService.query(srv);
+                // Ignore responses from a process stopped/replaced during the query.
+                if (!serverStore.get(srv.id) || processManager.processes.get(srv.id) !== entry || processManager.getStatus(srv.id) !== 'running') continue;
+                querySnapshot.record(srv.id, result);
+                if (result?.online) toServer(srv.id).emit(`server-query-${srv.id}`, result);
+            } finally { queriesInFlight.delete(srv.id); }
         }
     }
 }, 5000);

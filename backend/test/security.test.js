@@ -60,6 +60,16 @@ test.before(async () => {
 test.after(() => { child?.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 test('anonymous callers cannot read or change settings (was a full takeover)', async () => {
+    assert.equal((await api('GET', '/api/host')).status, 401);
+    assert.equal((await api('GET', '/api/art/valheim')).status, 401);
+    assert.equal((await api('GET', '/api/art/not-a-game', { token: adminToken })).status, 404);
+    assert.equal((await api('GET', '/api/host', { token: userToken })).status, 403);
+    const host = await api('GET', '/api/host', { token: adminToken });
+    assert.equal(host.status, 200);
+    assert.ok(host.data.memory.total > 0);
+    assert.ok(host.data.memory.used >= 0 && host.data.memory.used <= host.data.memory.total);
+    assert.ok(host.data.cpuPercent === null || (host.data.cpuPercent >= 0 && host.data.cpuPercent <= 100));
+    assert.ok(host.data.disk.total === null || host.data.disk.total > 0);
     assert.equal((await api('GET', '/api/settings')).status, 401);
     assert.equal((await api('POST', '/api/settings', { body: { authMode: 'external' } })).status, 401);
     assert.equal((await api('GET', '/api/settings?x=1')).status, 401, 'a query string must not skip auth');
@@ -183,6 +193,9 @@ test('users only see and control servers they were given, with the chosen permis
     assert.equal(seen[0].rconPassword, undefined, 'no RCON password for users');
     assert.equal(seen[0].path, undefined, 'no host paths for users');
     assert.deepEqual(seen[0].perms.sort(), ['power', 'view']);
+    assert.equal((await api('GET', '/api/host', { token: userToken })).status, 200);
+    assert.equal(seen[0].players, null);
+    assert.equal(seen[0].maxPlayers, null);
     assert.equal((await api('GET', '/api/server/fake1/files', { token: userToken })).status, 403, 'no files permission');
     assert.equal((await api('POST', '/api/server/start', { token: userToken, body: { id: 'fake1' } })).status, 200);
     assert.equal((await api('GET', '/api/server/fake1/status', { token: userToken })).data.status, 'running');

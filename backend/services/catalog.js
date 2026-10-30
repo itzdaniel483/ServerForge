@@ -39,7 +39,7 @@ const platformKey = () => (process.platform === 'win32' ? 'win32' : 'linux');
 function list() {
     const p = platformKey();
     return games.map(g => ({
-        id: g.id, name: g.name, appId: g.appId, category: g.category, notes: g.notes || null,
+        id: g.id, name: g.name, appId: g.appId, storeAppId: g.storeAppId, category: g.category, notes: g.notes || null,
         supported: !!g[p], platforms: ['linux', 'win32'].filter(k => g[k]),
         vars: varFields(g),
     }));
