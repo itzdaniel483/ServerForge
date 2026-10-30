@@ -90,17 +90,17 @@ function App() {
                 <div className="min-h-[68px] px-4 sm:px-8 py-2 sm:py-0 flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2 sm:gap-6">
                     <button onClick={() => go('servers')} className="flex items-center gap-3 shrink-0" aria-label="ServerForge home">
                         <Logo size={36} />
-                        <span className="hidden sm:block text-xl font-black tracking-tight text-white">Server<span className="text-gradient">Forge</span></span>
+                        <span className="hidden md:block text-xl font-black tracking-tight text-white">Server<span className="text-gradient">Forge</span></span>
                     </button>
                     {/* Below sm the nav takes its own full-width row so the bar fits a 360px phone. */}
                     <nav aria-label="Main" className="order-last sm:order-none w-full sm:w-auto flex items-center justify-between sm:justify-start gap-1 p-1 rounded-2xl bg-white/[.03] border border-white/[.06]">
                         {nav.map(n => {
                             const on = tab === n.id;
                             return (
-                                <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined} aria-label={n.label}
+                                <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined} aria-label={n.label} title={n.label}
                                     className={`h-10 flex items-center gap-2 px-3 sm:px-4 rounded-xl font-semibold transition-all ${on ? 'bg-gradient-to-r from-accent-800 to-accent-600 text-white shadow-glow' : 'text-gray-300 hover:text-white hover:bg-white/[.06]'}`}>
                                     <n.icon size={17} />
-                                    <span className="hidden md:inline">{n.label}</span>
+                                    <span className="hidden xl:inline">{n.label}</span>
                                 </button>
                             );
                         })}
@@ -108,7 +108,7 @@ function App() {
                     <HostChips />
                     <div className="ml-auto flex items-center gap-2 sm:gap-3">
                         <ThemePicker />
-                        <div className="hidden md:flex items-center gap-2.5 pl-3 border-l border-white/10">
+                        <div className="hidden lg:flex items-center gap-2.5 pl-3 border-l border-white/10">
                             <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500 to-accent2-500 grid place-items-center text-xs font-black uppercase text-white">{user.username.slice(0, 2)}</span>
                             <div className="leading-tight">
                                 <div className="text-sm font-bold text-white">{user.username}</div>
@@ -162,9 +162,9 @@ function HostChips() {
         { icon: HardDrive, label: 'Disk', v: pct(host.disk?.used, host.disk?.total) },
     ];
     return (
-        <div className="hidden xl:flex items-center gap-2">
+        <div className="hidden 2xl:flex items-center gap-1.5 shrink-0">
             {chips.filter(c => c.v !== null && c.v !== undefined).map(c => (
-                <div key={c.label} className="w-28 px-3 py-1.5 rounded-xl bg-white/[.03] border border-white/[.06]" title={`Host ${c.label}`}>
+                <div key={c.label} className="w-[5.5rem] px-2.5 py-1.5 rounded-xl bg-white/[.03] border border-white/[.06]" title={`Host ${c.label}`}>
                     <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-gray-400">
                         <span className="flex items-center gap-1"><c.icon size={12} className="text-accent-300" />{c.label}</span>
                         <span className="text-white tabular-nums">{Math.round(c.v)}%</span>
