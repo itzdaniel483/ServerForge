@@ -70,5 +70,6 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Phases 2-3 backend (codex 2e83ca2, 63/63): remote list/console/power/files/backups/tasks/settings/update/delete/install/cache over the link, hub-owned ACLs, OUTCOME_UNKNOWN
 - [x] Phases 2-3 UI (claude d0d0ef3, 516bc71): badges, machine filter, Node offline, actions-gated tabs, nodeHost, Install/Cache machine pickers; Plugins local-only
 - [x] Phases 2-3 LIVE 2026-10-30 14:03; real E2E against the live hub with a throwaway node panel on this VM: pair → server listed with badge → Start → live console → Files → Stop → node killed shows Node offline → reconnect → removed, all cleaned up
-- [ ] Garry's Mod record deleted on live at 14:03:59 by admin (files kept, 6.5G; .bak copy servers.json.keep-1404): ask Daniel whether to restore
+- [x] Garry's Mod record deleted on live 14:03:59 by admin (cause unknown); restored 14:18 at Daniel's request, start/stop verified, left stopped (empty list kept as servers.json.empty-1416)
+- [ ] Activity log: record IP + browser per entry (proposed to codex), show in Activity tab (claude)
 - [ ] Phase 4: Windows node package + test on a real Windows PC
