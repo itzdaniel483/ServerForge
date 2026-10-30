@@ -188,7 +188,7 @@ Start-Transcript -Path (Join-Path $DataDir 'setup.log') -Append | Out-Null
 # 2. Pairing file (asked early so a wrong or expired file stops setup before anything is installed)
 Step 2 $Total 'Pairing file'
 if ($AlreadyPaired) {
-    Say '  This PC is already paired; keeping it. If the panel doesn't recognise it any more, Setup offers to pair again at the end.' 'Green'
+    Say '  This PC is already paired; keeping it. If the panel does not recognise it any more, Setup offers to pair again at the end.' 'Green'
 } else {
 if (Test-Path $Identity) { Remove-Item $Identity -Force; Say '  Removed an unfinished pairing from an earlier attempt.' }
 $PairingFile = Select-PairingFile $PairingFile

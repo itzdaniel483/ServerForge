@@ -70,6 +70,18 @@ echo "$WINSW_SHA256  $CACHE/WinSW.NET461.exe" | sha256sum -c --quiet - || { echo
 cp "$CACHE/WinSW.NET461.exe" "$PKG/service/WinSW.exe"
 cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt} "$PKG/"
 
+# 4b. Every PowerShell script must parse (claude, 2026-10-30: a stray apostrophe once shipped a broken setup.ps1).
+PWSH="${PWSH:-$CACHE/pwsh/pwsh}"
+if [ -x "$PWSH" ]; then
+    say "Checking PowerShell syntax"
+    for f in "$PKG"/setup.ps1 "$PKG"/service/*.ps1; do
+        "$PWSH" -NoProfile -Command "\$e=\$null;\$t=\$null;[System.Management.Automation.Language.Parser]::ParseFile('$f',[ref]\$t,[ref]\$e)|Out-Null;if(\$e){\$e|%{'$(basename "$f") line '+\$_.Extent.StartLineNumber+': '+\$_.Message};exit 1}" || { echo "PowerShell syntax error in $(basename "$f"); not building" >&2; exit 1; }
+    done
+    LC_ALL=C grep -lP '[^\x00-\x7F]' "$PKG"/setup.ps1 "$PKG"/service/*.ps1 && { echo "Non-ASCII text in a .ps1 (Windows PowerShell 5.1 misreads it); not building" >&2; exit 1; } || true
+else
+    echo "WARNING: no PowerShell at $PWSH; skipping the syntax check" >&2
+fi
+
 # 5. Zip
 say "Zipping"
 python3 - "$STAGE" "$OUT/ServerForge-Node-Setup.zip" <<'PY'
