@@ -26,4 +26,8 @@ export function signOut(notice) {
     window.dispatchEvent(new Event('serverforge:signout'));
 }
 
+// SteamCMD output contains terminal colour codes; strip them for plain <pre> logs.
+// eslint-disable-next-line no-control-regex
+export const stripAnsi = text => String(text).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b/g, '');
+
 export const errorText = err => err?.response?.data?.error || err?.message || 'Something went wrong';

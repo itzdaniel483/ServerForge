@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Download, Search, Check, Zap } from 'lucide-react';
-import { getSocket, errorText } from '../api';
+import { getSocket, errorText, stripAnsi } from '../api';
 import { Button, Card, Notice, PageHeader, GameArt, Meter } from '../ui';
 import { VarFields } from './VarFields';
 
@@ -37,7 +37,7 @@ export default function Installer({ onDone }) {
     async function install() {
         setInstalling(true); setLogs([]); setResult(null);
         const socket = getSocket();
-        const onLog = d => setLogs(l => [...l.slice(-800), String(d)]);
+        const onLog = d => setLogs(l => [...l.slice(-800), stripAnsi(d)]);
         socket.on('install-log', onLog);
         try {
             await axios.post('/api/install', { gameId: game.id, vars, useCache });

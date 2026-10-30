@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Download, Trash2, X, RotateCw, ChevronDown, HardDrive, Search } from 'lucide-react';
 import { Button, Card, Meter, Notice, GameArt } from '../ui';
-import { getSocket, errorText } from '../api';
+import { getSocket, errorText, stripAnsi } from '../api';
 
 const BUSY = ['downloading', 'cancelling', 'deleting'];
 const RESUMABLE = ['interrupted', 'cancelled', 'error'];
@@ -84,7 +84,7 @@ function CacheRow({ game, entry, pending, onDownload, onCancel, onDelete }) {
     useEffect(() => {
         if (!showLog) return undefined;
         const socket = getSocket();
-        const onLine = d => setLog(l => (l + String(d)).slice(-20000));
+        const onLine = d => setLog(l => (l + stripAnsi(d)).slice(-20000));
         socket.on(`cache-download-${game.appId}`, onLine);
         return () => socket.off(`cache-download-${game.appId}`, onLine);
     }, [showLog, game.appId]);
