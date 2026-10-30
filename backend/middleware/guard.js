@@ -52,7 +52,9 @@ const loginSucceeded = ip => failures.delete(ip);
 
 // JWT secret: env var, else a random one saved next to the data (never the old hard-coded default).
 function loadJwtSecret() {
-    if (process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32) return process.env.JWT_SECRET;
+    // Ignore short secrets and the placeholder from .env.example (anyone could read it on GitHub).
+    const env = process.env.JWT_SECRET || '';
+    if (env.length >= 32 && !/change-this|your-secret|random-secret/i.test(env)) return env;
     const file = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'jwt-secret');
     try {
         const saved = fs.readFileSync(file, 'utf8').trim();
