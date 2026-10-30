@@ -4,7 +4,7 @@ import { Save } from 'lucide-react';
 import { errorText } from '../api';
 import { Button, Card, Notice } from '../ui';
 import { VarFields } from './VarFields';
-import CommandEditor from './CommandEditor';
+import LaunchEditor from './LaunchEditor';
 
 // Launch tab (claude, 2026-10-30): the game's settings as fields plus crash auto-restart.
 // The raw launch line stays available under "Advanced" for anything the fields don't cover.
@@ -61,10 +61,7 @@ export default function ServerSettings({ server, onSaved }) {
             ) : (
                 <Notice>This server wasn't installed from the game list, so only the launch line below can be edited.</Notice>
             )}
-            <details className="group" open={data.fields.length === 0}>
-                <summary className="cursor-pointer font-semibold text-gray-300 hover:text-white w-fit">Advanced: launch line</summary>
-                <div className="mt-4"><CommandEditor serverId={server.id} serverData={server} /></div>
-            </details>
+            <LaunchEditor server={server} />
         </div>
     );
 }
