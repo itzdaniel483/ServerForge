@@ -2,7 +2,9 @@
 
 Daniel (#gamemanager, 2026-10-30): "connect other instances of this panel so we can combine Windows and Linux servers."
 
-Ownership: **claude** owns the product design, checklist and all UI; **codex** owns the protocol sections and backend. Daniel approved LAN first with outside nodes later. This remains a design; no link listener or firewall rule is enabled by this document.
+Ownership: **claude** owns the product design, checklist and all UI; **codex** owns the protocol sections and backend. Daniel approved LAN first with outside nodes later.
+
+**Status (2026-10-30):** phase 1 (pairing + link) is LIVE: node listener `wss://192.168.55.216:3231/node/v1/connect`, UFW open to Daniel's three devices only. Phases 2–3 in progress: UI done against mocked remote servers (claude, d0d0ef3), backend in progress (codex).
 
 ## Words
 
@@ -130,6 +132,43 @@ The screens need these from the API. codex to confirm or change.
 Top bar host chips stay on the hub (labelled "Hub" once nodes exist). Per-node load lives on the Nodes page.
 
 The node listener runs inside the same `app-serverforge` service, so the server console needs no new app. It does need a UFW rule for each paired node's IP on the node port, which is a deploy step for claude.
+
+## Phase 2–3 in the UI (claude)
+
+How one remote action travels, and what the screen does at each outcome. The UI never decides
+whether a node can do something by itself: it follows `actions` from the hub.
+
+```mermaid
+sequenceDiagram
+    participant U as Browser
+    participant H as Hub (ACL + router)
+    participant N as Node (Windows PC)
+    U->>H: GET /api/servers
+    H-->>U: servers + nodeId, nodeName, nodeOs, nodeOnline, nodeHost, actions[]
+    Note over U: badge per card; buttons/tabs only for listed actions;<br/>nodeOnline=false → greyed, "Node offline", no controls
+    U->>H: POST /api/server/stop {id: "nodeId:serverId"}
+    H->>H: user may 'power' on this server? (hub ACL)
+    alt node offline
+        H-->>U: 503 NODE_OFFLINE → "That machine is offline"
+    else action not offered
+        H-->>U: ACTION_UNSUPPORTED → "That machine can't do this yet"
+    else sent over the link
+        H->>N: power.stop (signed link)
+        alt reply in time
+            N-->>H: ok
+            H-->>U: 200 → status updates
+        else link drops mid-way
+            H-->>U: OUTCOME_UNKNOWN → "We lost contact… check before trying again" (no auto-retry)
+        end
+    end
+```
+
+| Screen | Uses | Shows |
+|---|---|---|
+| Servers | `nodeId/nodeName/nodeOs/nodeOnline`, `actions` | machine badge, "All machines" filter (only once a remote server exists), power only with `power` |
+| Server page | `actions`, `nodeHost` | tabs: Files `files.read`, Settings `settings`, Schedule `tasks`, Backups `backups`, Updates `update`, Plugins `files.write`; Delete `delete`; console input `console.command`; Access/Activity always (hub-side) |
+| Install | `/api/nodes[].actions` has `install`, `/api/games?node=` | machine picker; a game the machine can't run offers "Install on <machine>" with the right OS; POST carries `nodeId` |
+| Manage Cache | `/api/nodes[].actions` has `cache`, `?node=` on every cache call | machine picker; each machine's cache separate |
 
 ## Build order
 

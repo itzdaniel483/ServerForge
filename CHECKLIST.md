@@ -67,6 +67,10 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Phase 1 backend (codex, 47/47) + Nodes page (claude); e2e tested on a throwaway hub
 - [x] Phase 1 LIVE 2026-10-30: enrol fix + enabled-listener test (codex, 48/48); node listener wss://192.168.55.216:3231 (cert in /etc/serverforge/node-tls via systemd credentials, drop-in deploy/app-serverforge.service.d/nodes.conf); UFW 3231 for .109/.134/.217 only; live pair→approve→online→remove verified with a throwaway node
 - [ ] Daniel's own pairing test on the live panel
-- [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
-- [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)
+- [ ] Phase 2 backend: list/host/status/console over the link (codex, in progress)
+- [x] Phase 2 UI: machine badges, machine filter, Node offline, actions-gated buttons/tabs, nodeHost address, NODE_*/OUTCOME_UNKNOWN messages (claude d0d0ef3; mocked browser test)
+- [ ] Phase 3 backend: power, commands, files, backups, tasks, cache, install over the link (codex)
+- [x] Phase 3 UI: Install machine picker + "Install on <machine>", Manage Cache machine picker (claude d0d0ef3)
+- [ ] Needs from codex: `nodeHost` on remote servers; node-level `install`/`cache` in /api/nodes actions; remote install/cache log event names
+- [ ] Phases 2-3 deploy + real end-to-end test with a test node on this VM (claude)
 - [ ] Phase 4: Windows node package + test on a real Windows PC
