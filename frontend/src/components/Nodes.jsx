@@ -104,6 +104,7 @@ function UpdateCell({ node, latest, onUpdated }) {
         <span className="inline-flex items-center gap-2">
             {job?.step === 'failed' && <span className="text-xs text-stop-300" title={job.error}>Update failed</span>}
             {behind && node.online && <Button size="sm" variant="primary" onClick={start} title={`Update to ${latest}`}>Update</Button>}
+            {latest && !node.version && node.online && <span className="text-xs text-gray-400" title="This machine was set up before one-click updates existed">Run Setup once to enable updates</span>}
         </span>
     );
 }
