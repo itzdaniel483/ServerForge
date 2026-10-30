@@ -93,9 +93,11 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 ## Daniel 2026-10-30 16:53 (#gamemanager 3576): after the Windows node joined
 - [x] 1. Install reports "Installed" only on the requested app's success line; one retry with validate (codex start, claude finish 36c4493) LIVE
 - [x] 2. TCAdmin-style command line LIVE (claude backend a9d7353 + UI); remote via launch.* actions
-- [ ] 3. Game-mode presets at install (Gmod: Sandbox, TTT, DarkRP + auto-download, Prop Hunt, Murder, Workshop collection) (codex install; claude picker done 46bc981, mock 8/8)
-- [ ] 4. Move a server between nodes: fresh install + configs/saves (Daniel 3580) (codex transfer; claude "Move to…" UI done, mock 7/7; deploy only with backend)
+- [x] 3. Game modes LIVE (3e1b4fd): Gmod Sandbox / TTT / DarkRP (pinned+sha256 download) / Workshop collection (+gamemode name); {gamemode}/{workshop} vars
+- [x] 4. Move between machines LIVE (a48d6bf): two-panel e2e test; schedules/access not moved yet
 - [x] Windows node DESKTOP-PSDC77U ONLINE on live (install+cache)
 - [x] Windows Setup fixes during the VM test: hidden ProgramData, LocalService via WMI, leftover service, stale identity + .bak, PS 5.1 exit code; build parses every .ps1
 - [x] 5. One-click node updates (Daniel 3591): signed package push + SYSTEM updater with rollback (e508a80); live push e2e to a throwaway node OK; Windows apply untested until Daniel runs the new Setup once
-- [ ] 5b. Daniel runs Setup once → publish a test update → he tries Update
+- [x] 5b. Daniel ran Setup; test update b7c113c227c0 applied by the button on real Windows; then game modes 7acfa48b3529
+- [ ] Daniel updates PC to 7288cc96a47b (move support) and tries a move
+- [ ] Move: carry schedules + access grants
