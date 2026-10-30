@@ -53,8 +53,9 @@ $dependXml
 "@ | Set-Content -Path $xml -Encoding ASCII
     & $exe install | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "WinSW could not install $id (code $LASTEXITCODE)" }
-    & sc.exe config $id obj= 'NT AUTHORITY\LocalService' password= '' | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not set $id to run as LocalService (code $LASTEXITCODE)" }
+    # Run as LocalService (WMI takes the empty password for built-in accounts; sc.exe via PS 5.1 can't).
+    $r = Get-CimInstance Win32_Service -Filter "Name='$id'" | Invoke-CimMethod -MethodName Change -Arguments @{ StartName = 'NT AUTHORITY\LocalService'; StartPassword = '' }
+    if ($r.ReturnValue -ne 0) { throw "Could not set $id to run as LocalService (WMI code $($r.ReturnValue))" }
 }
 
 # LocalService may read the app and change only the data folder.

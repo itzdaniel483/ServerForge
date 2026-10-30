@@ -88,9 +88,10 @@ $node = Join-Path $Here 'runtime\node.exe'
 $app = Join-Path $Here 'app\backend\server.js'
 $serviceScript = Join-Path $Here 'service\Install-ServerForgeService.ps1'
 foreach ($f in @($node, $app, $serviceScript)) { if (-not (Test-Path $f)) { Fail "Missing $f. Unzip the whole ServerForge-Node-Setup.zip first, then run Setup.cmd from inside it." } }
-$drive = (Get-Item $env:ProgramData).PSDrive
-$freeGb = [math]::Floor((Get-PSDrive $drive.Name).Free / 1GB)
-Say "  Windows $os, 64-bit, $freeGb GB free on $($drive.Name):"
+# ProgramData is a hidden folder, so take the drive letter from the path instead of Get-Item.
+$driveName = (Split-Path -Qualifier $DataDir).TrimEnd(':')
+$freeGb = [math]::Floor((Get-PSDrive -Name $driveName).Free / 1GB)
+Say "  Windows $os, 64-bit, $freeGb GB free on ${driveName}:"
 if ($freeGb -lt 30) { Say "  Warning: game servers need a lot of space (often 10-50 GB each). Only $freeGb GB is free." 'Yellow' }
 
 New-PrivateDir $DataDir
