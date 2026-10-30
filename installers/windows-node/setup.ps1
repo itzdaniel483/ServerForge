@@ -135,7 +135,9 @@ Step 3 $Total "Installing ServerForge to $InstallDir"
 Stop-ServerForge
 foreach ($part in @('app', 'runtime', 'service')) {
     $dest = Join-Path $InstallDir $part
-    & robocopy (Join-Path $Here $part) $dest /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    # service\ also holds the generated ServerForge*.exe/.xml for the installed services: never mirror-delete those.
+    $mode = if ($part -eq 'service') { '/E' } else { '/MIR' }
+    & robocopy (Join-Path $Here $part) $dest $mode /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { Fail "Copying $part failed (robocopy code $LASTEXITCODE)." }
 }
 Copy-Item (Join-Path $Here 'setup.ps1'), (Join-Path $Here 'Uninstall.cmd') $InstallDir -Force

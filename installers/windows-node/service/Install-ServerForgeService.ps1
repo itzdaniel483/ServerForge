@@ -23,9 +23,11 @@ function Register-SfService($id, $description, $arguments, [hashtable]$envVars, 
     $exe = Join-Path $SvcDir "$id.exe"
     $xml = Join-Path $SvcDir "$id.xml"
     if (Get-Service -Name $id -ErrorAction SilentlyContinue) {
+        # A previous run may have left the service registered while its wrapper exe is gone: remove it either way.
         Stop-Service -Name $id -Force -ErrorAction SilentlyContinue
-        & $exe uninstall | Out-Null
-        Start-Sleep -Seconds 2
+        if (Test-Path $exe) { & $exe uninstall | Out-Null } else { & sc.exe delete $id | Out-Null }
+        for ($i = 0; $i -lt 20 -and (Get-Service -Name $id -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+        if (Get-Service -Name $id -ErrorAction SilentlyContinue) { throw "The old $id service is still registered. Restart the PC, then run Setup again." }
     }
     Copy-Item $WinSW $exe -Force
     Start-Sleep -Milliseconds 500
