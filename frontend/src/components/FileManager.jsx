@@ -101,7 +101,7 @@ function FileManager({ serverId, canEdit = true }) {
     return (
         <div className="h-[calc(100vh-380px)] min-h-[480px] flex gap-4">
             {/* File Browser */}
-            <div className="w-1/3 bg-gray-900/50 rounded-xl border border-gray-700/30 flex flex-col">
+            <div className="w-1/3 glass rounded-2xl flex flex-col">
                 {/* Breadcrumb */}
                 <div className="p-4 border-b border-gray-700/30 flex items-center space-x-2 text-sm">
                     <button
@@ -168,7 +168,7 @@ function FileManager({ serverId, canEdit = true }) {
             </div>
 
             {/* File Editor */}
-            <div className="flex-1 bg-gray-900/50 rounded-xl border border-gray-700/30 flex flex-col">
+            <div className="flex-1 glass rounded-2xl flex flex-col">
                 {selectedFile ? (
                     <>
                         <div className="p-4 border-b border-gray-700/30 flex items-center justify-between">
@@ -180,7 +180,7 @@ function FileManager({ serverId, canEdit = true }) {
                                 {canEdit && <button
                                     onClick={saveFile}
                                     disabled={saving}
-                                    className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm"
+                                    className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm"
                                 >
                                     <Save size={16} />
                                     <span>{saving ? 'Saving...' : 'Save'}</span>

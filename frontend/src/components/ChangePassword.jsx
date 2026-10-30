@@ -51,7 +51,7 @@ function ChangePassword() {
     };
 
     return (
-        <div className="bg-gray-900 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8">
+        <div className="glass rounded-2xl p-8">
             <div className="mb-6">
                 <h3 className="text-xl font-bold text-white mb-2 flex items-center">
                     <Lock size={20} className="mr-3 text-blue-400" />

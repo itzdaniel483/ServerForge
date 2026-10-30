@@ -72,7 +72,7 @@ function CommandEditor({ serverId, serverData }) {
 
     return (
         <div className="space-y-6">
-            <div className="bg-gray-900/50 rounded-xl border border-gray-700/30 p-6">
+            <div className="glass rounded-2xl p-6">
                 <h3 className="text-white font-bold text-lg mb-4 flex items-center">
                     <Terminal size={20} className="mr-2 text-blue-400" />
                     Startup Configuration
@@ -165,7 +165,7 @@ function CommandEditor({ serverId, serverData }) {
                     <button
                         onClick={saveConfig}
                         disabled={saving}
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center justify-center space-x-2 font-medium"
+                        className="w-full bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center justify-center space-x-2 font-medium"
                     >
                         <Save size={18} />
                         <span>{saving ? 'Saving...' : 'Save Configuration'}</span>

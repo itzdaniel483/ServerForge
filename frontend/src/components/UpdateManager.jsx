@@ -59,7 +59,7 @@ function UpdateManager({ server }) {
 
     return (
         <div className="space-y-4">
-            <div className="bg-gray-900/50 rounded-xl p-6 border border-gray-800">
+            <div className="glass rounded-2xl p-6">
                 <div className="flex items-start justify-between mb-4">
                     <div>
                         <h3 className="text-lg font-semibold text-white mb-2 flex items-center">
@@ -75,7 +75,7 @@ function UpdateManager({ server }) {
                         disabled={updating}
                         className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${updating
                             ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 hover:bg-blue-500 text-white'
+                            : 'bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white'
                             }`}
                     >
                         <RefreshCw size={16} className={updating ? 'animate-spin' : ''} />

@@ -55,4 +55,4 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Installer: game-art grid, art header on the form, SteamCMD progress bar
 - [x] Login: gradient hero
 - [x] Daniel picked Steel as default (2026-10-30)
-- [ ] Restyle the inner tools (Files, Backups, Schedule, Settings tables) to the v2 kit
+- [x] Inner tools (Files, Backups, Schedule, Plugins, Updates, Settings) on the v2 kit: frosted panels, gradient buttons, pill tabs; duplicate Settings title removed
