@@ -448,7 +448,16 @@ app.post('/api/install', requireAdmin, async (req, res) => {
     const body = req.body || {};
     const game = catalog.get(body.gameId) || catalog.findByAppId(body.appId);
     if (!game) return res.status(400).json({ error: 'Pick a game' });
-    const { vars, errors } = catalog.cleanVars(game, { ...(body.vars || {}), ...(body.hostname ? { name: body.hostname } : {}), ...(body.port ? { port: body.port } : {}) });
+    // Game modes (claude, Daniel #gamemanager 3576): the mode sets +gamemode, a Workshop collection, extra downloads.
+    let mode = null;
+    if (body.mode !== undefined) {
+        mode = (game.modes || []).find(m => m.id === body.mode);
+        if (!mode) return res.status(400).json({ error: 'Pick one of this game\'s modes' });
+        if (mode.needsWorkshopKey && !/^\d{1,20}$/.test(String(body.workshopCollection || ''))) return res.status(400).json({ error: 'Enter the Workshop collection ID (the number at the end of its Steam link)' });
+    }
+    const modeVars = mode ? { ...(mode.gamemode ? { gamemode: mode.gamemode } : {}), ...(mode.needsWorkshopKey ? { workshop: String(body.workshopCollection) } : {}),
+        ...(mode.customGamemode && typeof body.gamemode === 'string' && body.gamemode ? { gamemode: body.gamemode } : {}) } : {};
+    const { vars, errors } = catalog.cleanVars(game, { ...(body.vars || {}), ...modeVars, ...(body.hostname ? { name: body.hostname } : {}), ...(body.port ? { port: body.port } : {}) });
     if (errors.length) return res.status(400).json({ error: errors.join('. ') });
     if (!game[catalog.platformKey()]) return res.status(400).json({ error: `${game.name} only has a ${game.linux ? 'Linux' : 'Windows'} server` });
     const clash = serverStore.getAll().find(s => Number(s.port) === vars.port);
@@ -491,7 +500,8 @@ app.post('/api/install', requireAdmin, async (req, res) => {
         }
 
         if (game.engine === 'source') await steamcmd.createServerConfig(installPath, game.gameDir, rconPassword, vars.name);
-        audit(req, 'install', newServer, game.name);
+        if (mode?.download) await require('./services/modeDownloads').installModeFiles(mode.download, installPath, log);
+        audit(req, 'install', newServer, mode ? `${game.name} · ${mode.name}` : game.name);
         newServer = await serverStore.update(newServer.id, { status: 'stopped', installError: undefined });
         log(`\nDone: ${vars.name} is ready.\n`);
         res.json({ success: true, server: newServer });
@@ -534,13 +544,13 @@ app.get('/api/server/:id/settings', (req, res) => {
 // preview. The RCON password is never shown in the preview. Servers not from the catalogue edit their raw args.
 function launchView(srv, template, customArgs) {
     const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
-    const shown = { ...catalog.launchValues(game ? srv.vars : { port: srv.port }, srv), rconpassword: '••••' };
+    const shown = { ...catalog.launchValues(game ? srv.vars : { port: srv.port }, srv, game), rconpassword: '••••' };
     const def = game ? catalog.defaultTemplate(game) : (srv.args || []).map(catalog.quoteArg).join(' ');
     const tpl = template === undefined ? (game ? (srv.launchTemplate ?? null) : def) : template;
     const custom = customArgs === undefined ? (game ? (srv.customArgs || '') : '') : customArgs;
     const { rconpassword, ...variables } = shown;
     return { game, def, executable: srv.executable || '', template: tpl, defaultTemplate: def, customArgs: custom, variables: { ...variables, rconpassword: '(hidden)' },
-        preview: catalog.renderArgs(tpl ?? def, custom, shown) };
+        preview: [...catalog.renderArgs(tpl ?? def, custom, shown), ...(game ? catalog.workshopArgs(shown, { mask: true }) : [])] };
 }
 const launchError = (res, err) => res.status(err.status || 400).json({ error: err.message, ...(err.at !== undefined ? { at: err.at } : {}), code: err.code || 'LAUNCH_TEMPLATE_INVALID' });
 app.get('/api/server/:id/launch', requireAdmin, (req, res) => {
@@ -561,9 +571,9 @@ app.put('/api/server/:id/launch', requireAdmin, async (req, res) => {
     if ((template !== null && typeof template !== 'string') || typeof customArgs !== 'string') return res.status(400).json({ error: 'Send the template and custom parameters as text', code: 'LAUNCH_TEMPLATE_INVALID' });
     try {
         const { game, def } = launchView(srv, template, customArgs);   // validates both
-        const values = catalog.launchValues(game ? srv.vars : { port: srv.port }, srv);
+        const values = catalog.launchValues(game ? srv.vars : { port: srv.port }, srv, game);
         const tpl = template !== null && template.trim() === def.trim() ? null : template;
-        const args = catalog.renderArgs(tpl ?? def, customArgs, values);
+        const args = [...catalog.renderArgs(tpl ?? def, customArgs, values), ...(game ? catalog.workshopArgs(values) : [])];
         await serverStore.update(srv.id, game ? { launchTemplate: tpl, customArgs, args } : { args });
         audit(req, 'settings', srv, 'Command line changed');
         const { game: _g, def: _d, ...view } = launchView(serverStore.get(srv.id));

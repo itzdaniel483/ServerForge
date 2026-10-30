@@ -23,6 +23,8 @@ const VARS = {
     rconport: { label: 'RCON port', type: 'number', min: 1024, max: 65535 },
     worldsize: { label: 'World size', type: 'number', min: 1000, max: 6000 },
     seed: { label: 'World seed', type: 'number', min: 0, max: 2147483647 },
+    gamemode: { label: 'Game mode', type: 'text', test: v => /^[A-Za-z0-9_]{1,40}$/.test(v), help: 'Gamemode folder name, e.g. sandbox, terrortown, darkrp, prop_hunt' },
+    workshop: { label: 'Workshop collection ID', type: 'text', test: v => /^\d{0,20}$/.test(v), help: 'Numbers only, blank for none. Uses the Steam Web API key from Settings' },
     password: { label: 'Password', type: 'secret', test: v => /^[A-Za-z0-9!@#$%^*_+=.,-]{0,32}$/.test(v), help: 'Blank for none (some games need one). No spaces or quotes' },
 };
 
@@ -42,6 +44,8 @@ function list() {
         id: g.id, name: g.name, appId: g.appId, storeAppId: g.storeAppId, category: g.category, notes: g.notes || null,
         supported: !!g[p], platforms: ['linux', 'win32'].filter(k => g[k]),
         vars: varFields(g),
+        // Game modes (Daniel #gamemanager 3576): what the installer offers; download/gamemode details stay server-side.
+        ...(g.modes ? { modes: g.modes.map(m => ({ id: m.id, name: m.name, description: m.description || '', ...(m.downloads ? { downloads: m.downloads } : {}), ...(m.needsWorkshopKey ? { needsWorkshopKey: true } : {}), ...(m.customGamemode ? { customGamemode: true } : {}) })) } : {}),
     }));
 }
 
@@ -108,8 +112,10 @@ function defaultTemplate(game) {
     const spec = game?.[platformKey()];
     return spec ? spec.args.map(a => quoteArg(String(a).replace(/\{\{(\w+)\}\}/g, '{$1}'))).join(' ') : '';
 }
-function launchValues(vars, server = {}) {
-    const values = { ...(vars || {}), rconpassword: server.rconPassword || '' };
+// Servers installed before a variable existed (e.g. gamemode, added 2026-10-30) get the game's default for it.
+function launchValues(vars, server = {}, game = null) {
+    const defaults = game ? Object.fromEntries(varFields(game).map(f => [f.key, f.default])) : {};
+    const values = { ...defaults, ...(vars || {}), rconpassword: server.rconPassword || '' };
     for (const k of Object.keys(values)) if (values[k] === undefined || values[k] === null) values[k] = '';
     return values;
 }
@@ -119,17 +125,27 @@ function renderArgs(template, customArgs, values) {
     return args;
 }
 
+// A Workshop collection (game mode "Workshop collection", or set in Settings) is added at launch build time, so it
+// survives Settings saves and template edits. Gmod needs the Steam Web API key from Settings to download it.
+function workshopArgs(values, { mask = false } = {}) {
+    if (!/^\d{1,20}$/.test(String(values.workshop || ''))) return [];
+    let key = '';
+    try { key = require('./settingsStore').getAll().steamApiKey || ''; } catch { key = ''; }
+    return ['+host_workshop_collection', String(values.workshop), ...(key ? ['-authkey', mask ? '••••' : key] : [])];
+}
+
 function buildLaunch(game, vars, server = {}) {
     const p = platformKey();
     const spec = game[p];
     if (!spec) throw Object.assign(new Error(`${game.name} has no ${p === 'win32' ? 'Windows' : 'Linux'} server`), { status: 400 });
-    const values = launchValues(vars, server);
+    const values = launchValues(vars, server, game);
     const fill = s => String(s).replace(/\{\{(\w+)\}\}/g, (_, k) => (values[k] === undefined ? '' : String(values[k])));
     // A saved template / custom parameters survive settings changes; only the variable values are refreshed.
     const custom = typeof server.launchTemplate === 'string' || (typeof server.customArgs === 'string' && server.customArgs.trim());
+    const args = custom ? renderArgs(server.launchTemplate ?? defaultTemplate(game), server.customArgs || '', values) : spec.args.map(fill);
     return {
         executable: spec.executable,
-        args: custom ? renderArgs(server.launchTemplate ?? defaultTemplate(game), server.customArgs || '', values) : spec.args.map(fill),
+        args: [...args, ...workshopArgs(values)],
         env: spec.env || {},
         cwd: spec.cwd || '',
     };
@@ -137,4 +153,4 @@ function buildLaunch(game, vars, server = {}) {
 
 const newRconPassword = () => crypto.randomBytes(12).toString('base64url');
 
-module.exports = { list, get, findByAppId, cleanVars, buildLaunch, newRconPassword, platformKey, VARS, tokenize, renderArgs, defaultTemplate, launchValues, quoteArg, TEMPLATE_MAX, CUSTOM_MAX };
+module.exports = { workshopArgs, list, get, findByAppId, cleanVars, buildLaunch, newRconPassword, platformKey, VARS, tokenize, renderArgs, defaultTemplate, launchValues, quoteArg, TEMPLATE_MAX, CUSTOM_MAX };

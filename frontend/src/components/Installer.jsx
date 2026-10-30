@@ -26,6 +26,7 @@ export default function Installer({ onDone }) {
     // Game modes (Daniel #gamemanager 3576; contract #3584): e.g. Gmod Sandbox / TTT / DarkRP / Workshop collection.
     const [mode, setMode] = useState('');
     const [collection, setCollection] = useState('');
+    const [gmName, setGmName] = useState('');
     const [nodeId, setNodeId] = useState('local');
     const logRef = useRef(null);
     const nodeQuery = nodeId === 'local' ? '' : `?node=${encodeURIComponent(nodeId)}`;
@@ -44,7 +45,7 @@ export default function Installer({ onDone }) {
     useEffect(() => {
         if (!game) return;
         setUseCache(false);
-        setMode(game.modes?.[0]?.id || ''); setCollection('');
+        setMode(game.modes?.[0]?.id || ''); setCollection(''); setGmName('');
         setVars(Object.fromEntries(game.vars.map(f => [f.key, f.default])));
         axios.get(`/api/cache/status/${game.appId}${nodeQuery}`).then(r => setCache(r.data)).catch(() => setCache({}));
     }, [game, nodeQuery]);
@@ -59,7 +60,7 @@ export default function Installer({ onDone }) {
         const event = nodeId === 'local' ? 'install-log' : `install-log-${nodeId}`;
         socket.on(event, onLog);
         try {
-            await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }), ...(mode ? { mode } : {}), ...(currentMode?.needsWorkshopKey && collection ? { workshopCollection: collection } : {}) });
+            await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }), ...(mode ? { mode } : {}), ...(currentMode?.needsWorkshopKey && collection ? { workshopCollection: collection } : {}), ...(currentMode?.customGamemode && gmName ? { gamemode: gmName } : {}) });
             setResult({ ok: true, text: `${vars.name} is installed.` });
         } catch (err) {
             setResult({ ok: false, text: errorText(err) });
@@ -183,6 +184,14 @@ export default function Installer({ onDone }) {
                                             <input value={collection} onChange={e => setCollection(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="e.g. 123456789" disabled={installing}
                                                 className="w-full h-8 bg-gray-950 text-white text-[13px] px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
                                             <span className="block text-[11px] text-gray-500 mt-1">The number at the end of the collection's Steam link. Uses the Steam Web API key from Settings.</span>
+                                        </label>
+                                    )}
+                                    {currentMode?.customGamemode && (
+                                        <label className="block">
+                                            <span className="block text-xs font-medium text-gray-300 mb-1">Gamemode name</span>
+                                            <input value={gmName} onChange={e => setGmName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40))} placeholder="e.g. prop_hunt" disabled={installing}
+                                                className="w-full h-8 bg-gray-950 text-white text-[13px] font-mono px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
+                                            <span className="block text-[11px] text-gray-500 mt-1">The folder name of the gamemode in the collection (shown on its Workshop page). Blank = sandbox.</span>
                                         </label>
                                     )}
                                 </div>

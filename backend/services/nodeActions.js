@@ -28,7 +28,7 @@ const definitions = {
     'update.status': ['GET', '/api/node-update/status'],
     'config.write': ['PUT', '/api/server/:serverId/config', ['executable', 'args']], 'schedule.write': ['POST', '/api/server/:serverId/schedule', ['schedule']],
     update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId'],
-    install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port']],
+    install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port', 'mode', 'workshopCollection', 'gamemode']],
     'cache.list': ['GET', '/api/cache/list'], 'cache.status': ['GET', '/api/cache/status/:appId'], 'cache.download': ['POST', '/api/cache/download/:appId', ['gameName']],
     'cache.cancel': ['POST', '/api/cache/:appId/cancel'], 'cache.delete': ['DELETE', '/api/cache/:appId'], 'cache.copy': ['POST', '/api/cache/copy/:appId', ['targetPath']],
     'templates.list': ['GET', '/api/templates'], 'templates.read': ['GET', '/api/templates/:gameId'],
