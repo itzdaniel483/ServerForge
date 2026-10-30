@@ -101,6 +101,9 @@ test('two real panels federate list, ACLs, files, power/streams, tasks, backups,
         assert.equal((await hub.api('DELETE', `/api/cache/232250?node=${nodeId}`, undefined, hub.token)).status, 200);
         const audit = (await node.api('GET', '/api/activity', undefined, node.token)).data;
         assert.ok(audit.some(row => row.user === 'player' && row.action === 'start'));
+        const delegatedStart = audit.find(row => row.user === 'player' && row.action === 'start');
+        assert.equal(delegatedStart.ip, '127.0.0.1'); assert.equal(delegatedStart.peerIp, '127.0.0.1');
+        assert.equal(delegatedStart.viaHub, true); assert.ok(delegatedStart.userAgent);
         client.stop(); await until(async () => (await hub.api('GET', '/api/servers', undefined, hub.token)).data.find(server => server.id === id)?.nodeOnline === false);
         assert.equal((await hub.api('POST', '/api/server/start', { id }, hub.token)).data.code, 'NODE_OFFLINE');
         assert.equal((await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(server => server.id === 'sameid'), false);

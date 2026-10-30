@@ -39,7 +39,8 @@ const schedulerService = require('./services/schedulerService');
 const backupService = require('./services/backupService');
 const cacheService = require('./services/cacheService');
 const auditLog = require('./services/auditLog');
-const audit = (req, action, srv, detail) => auditLog.add({ user: req.hubActor?.username || req.user?.username || 'system', action, serverId: srv?.id || null, server: srv?.name || null, detail: detail || null });
+const { auditContext } = require('./services/auditContext');
+const audit = (req, action, srv, detail) => auditLog.add({ user: req.hubActor?.username || req.user?.username || 'system', action, serverId: srv?.id || null, server: srv?.name || null, detail: detail || null, ...auditContext(req) });
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 

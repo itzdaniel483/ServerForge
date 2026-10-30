@@ -1,4 +1,5 @@
 const access = require('./access');
+const { auditContext } = require('./auditContext');
 const { splitRemoteId } = require('./remoteServers');
 const nullHost = () => ({ cpuPercent: null, memory: { used: null, total: null }, disk: { used: null, total: null } });
 const GROUPS = {
@@ -75,7 +76,8 @@ function createRemoteRouter({ registry, getTransport, store, userStore, onAccess
                 if (mapped.action === 'host') return res.json(nullHost());
                 return res.status(503).json({ error: 'Node is offline', code: 'NODE_OFFLINE' });
             }
-            const result = await transport.request(selected, mapped.action, mapped.params, { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role },
+            const { ip, userAgent } = auditContext(req);
+            const result = await transport.request(selected, mapped.action, mapped.params, { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role, ip, userAgent },
                 { timeoutMs: ['install', 'update', 'backups.restore', 'cache.copy'].includes(mapped.action) ? 1800000 : 30000 });
             let response = result.body;
             if (mapped.action === 'catalog' && response && typeof response === 'object') response = { ...response, nodeId: selected };

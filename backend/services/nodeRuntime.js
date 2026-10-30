@@ -4,6 +4,7 @@ const os = require('node:os');
 const net = require('node:net');
 const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
+const { cleanIp, cleanUserAgent } = require('./auditContext');
 const { ACTIONS, getLocalRequest, nativeId } = require('./nodeActions');
 const { writeJsonSync } = require('./jsonFile');
 const MAX_RESPONSE = 8 * 1024 * 1024 - 4096;
@@ -28,7 +29,7 @@ function localApiTarget(value) {
 function actorIdentity(actor) {
     if (!actor || typeof actor !== 'object' || typeof actor.id !== 'string' || typeof actor.username !== 'string' ||
         !actor.id || actor.id.length > 128 || !actor.username || actor.username.length > 128 || /[\x00-\x1f\x7f]/.test(actor.id + actor.username)) throw problem('A hub actor identity is required');
-    return { id: actor.id, username: actor.username };
+    return { id: actor.id, username: actor.username, ip: cleanIp(actor.ip), userAgent: cleanUserAgent(actor.userAgent) };
 }
 function canonical(value) {
     if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -117,7 +118,7 @@ class NodeRuntime {
         const mutation = local.method !== 'GET';
         if (!mutation) return this.execute(action, local, hubActor);
         if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(operationId) || ['__proto__', 'constructor', 'prototype'].includes(operationId)) throw problem('Mutation requires an operation ID');
-        const hash = crypto.createHash('sha256').update(canonical({ action, local, actor: hubActor })).digest('hex');
+        const hash = crypto.createHash('sha256').update(canonical({ action, local, actor: { id: hubActor.id, username: hubActor.username } })).digest('hex');
         const previous = this.journal[operationId];
         if (previous) {
             if (previous.hash !== hash) throw problem('Operation ID was used for different input', 'OPERATION_CONFLICT', 409);

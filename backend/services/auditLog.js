@@ -2,13 +2,14 @@
 // JSON Lines in DATA_DIR/activity.jsonl, trimmed to the last 2000 entries. No passwords or file contents.
 const fs = require('fs-extra');
 const path = require('path');
+const { cleanIp, cleanUserAgent } = require('./auditContext');
 
 const FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'activity.jsonl');
 const MAX = 2000;
 let writes = 0;
 
 function add(entry) {
-    const line = JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n';
+    const line = JSON.stringify({ at: new Date().toISOString(), ...entry, ip: cleanIp(entry.ip), userAgent: cleanUserAgent(entry.userAgent), peerIp: cleanIp(entry.peerIp), viaHub: entry.viaHub === true }) + '\n';
     try {
         fs.ensureDirSync(path.dirname(FILE));
         fs.appendFileSync(FILE, line, { mode: 0o600 });
@@ -26,7 +27,8 @@ function trim() {
 function list({ serverId, limit = 200 } = {}) {
     try {
         const rows = fs.readFileSync(FILE, 'utf8').trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        return rows.filter(r => !serverId || r.serverId === serverId).reverse().slice(0, limit);
+        return rows.filter(r => !serverId || r.serverId === serverId).reverse().slice(0, limit).map(entry => ({ ...entry,
+            ip: cleanIp(entry.ip), userAgent: cleanUserAgent(entry.userAgent), peerIp: cleanIp(entry.peerIp), viaHub: entry.viaHub === true }));
     } catch {
         return [];
     }

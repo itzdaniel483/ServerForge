@@ -14,10 +14,10 @@ const freePort = () => new Promise(r => { const s = net.createServer().listen(0,
 let base, child, tmp, adminToken, userToken;
 const ADMIN_PASSWORD = 'test-admin-pass-1';
 
-async function api(method, url, { token, body } = {}) {
+async function api(method, url, { token, body, headers = {} } = {}) {
     const res = await fetch(base + url, {
         method,
-        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: body ? JSON.stringify(body) : undefined,
     });
     let data = null; try { data = await res.json(); } catch { /* not json */ }
@@ -229,11 +229,14 @@ test('users only see and control servers they were given, with the chosen permis
     assert.equal(seen[0].players, null);
     assert.equal(seen[0].maxPlayers, null);
     assert.equal((await api('GET', '/api/server/fake1/files', { token: userToken })).status, 403, 'no files permission');
-    assert.equal((await api('POST', '/api/server/start', { token: userToken, body: { id: 'fake1' } })).status, 200);
+    assert.equal((await api('POST', '/api/server/start', { token: userToken, body: { id: 'fake1' }, headers: { 'User-Agent': 'Audit Test Browser/1.0', 'X-Forwarded-For': '203.0.113.5', 'CF-Connecting-IP': '203.0.113.6' } })).status, 200);
     assert.equal((await api('GET', '/api/server/fake1/status', { token: userToken })).data.status, 'running');
     assert.equal((await api('POST', '/api/server/stop', { token: userToken, body: { id: 'fake1' } })).status, 200);
     const log = (await api('GET', '/api/activity', { token: adminToken })).data;
     assert.ok(log.some(r => r.action === 'start' && r.user === 'player'), 'activity log records who started it');
+    const started = log.find(r => r.action === 'start' && r.user === 'player');
+    assert.equal(started.ip, '127.0.0.1'); assert.equal(started.peerIp, '127.0.0.1');
+    assert.equal(started.userAgent, 'Audit Test Browser/1.0'); assert.equal(started.viaHub, false);
 });
 
 test('scheduled tasks: admins only, sane timetables, and they actually run', async () => {

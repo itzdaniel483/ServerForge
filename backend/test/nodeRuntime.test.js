@@ -52,7 +52,7 @@ test('runtime signs fresh local admin tokens with hub actor and strips snapshot 
     try {
         const list = await runtime.handle('servers.list', {}, actor);
         assert.deepEqual(list.body, [{ id: 'one', name: 'Test', status: 'running' }]);
-        assert.deepEqual(tokens[0].hubActor, { id: actor.id, username: actor.username });
+        assert.deepEqual(tokens[0].hubActor, { id: actor.id, username: actor.username, ip: null, userAgent: null });
         saveAdmin(2);
         const snapshot = await runtime.snapshot();
         assert.deepEqual(snapshot.servers, list.body);
@@ -80,6 +80,7 @@ test('mutation journal deduplicates, detects conflicts, and never replays a cras
         release();
         assert.deepEqual(await first, await second);
         assert.deepEqual(await runtime.handle('power.start', { serverId: 'one' }, actor, 'operation-one'), result({ success: true }));
+        assert.deepEqual(await runtime.handle('power.start', { serverId: 'one' }, { ...actor, ip: '192.168.55.109', userAgent: 'Changed browser metadata' }, 'operation-one'), result({ success: true }));
         assert.equal(calls, 1);
         await assert.rejects(runtime.handle('power.stop', { serverId: 'one' }, actor, 'operation-one'), { code: 'OPERATION_CONFLICT' });
         assert.equal(fs.statSync(path.join(dir, 'node-operations.json')).mode & 0o777, 0o600);

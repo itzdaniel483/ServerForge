@@ -2,6 +2,7 @@
 const https = require('node:https');
 const { EventEmitter } = require('node:events');
 const { randomUUID, X509Certificate } = require('node:crypto');
+const { cleanIp, cleanUserAgent } = require('./auditContext');
 const { WebSocketServer, WebSocket } = require('ws');
 const { ACTIONS, sendPacket, createDecoder } = require('./nodeProtocol');
 
@@ -249,7 +250,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
                 (operationId !== undefined && (typeof operationId !== 'string' || !/^[\w-]{1,128}$/.test(operationId)))) throw rpcError('Invalid node RPC request', 400, 'NODE_REQUEST_INVALID');
             const username = typeof actor === 'string' ? actor : actor?.username;
             if (typeof username !== 'string' || username.length < 1 || username.length > 128 || /[\x00-\x1f\x7f]/.test(username)) throw rpcError('Invalid RPC actor', 400, 'NODE_REQUEST_INVALID');
-            const actorIdentity = typeof actor === 'string' ? actor : { username, ...(typeof actor.id === 'string' ? { id: actor.id.slice(0, 128) } : {}), ...(typeof actor.role === 'string' ? { role: actor.role.slice(0, 32) } : {}) };
+            const actorIdentity = typeof actor === 'string' ? actor : { username, ...(typeof actor.id === 'string' ? { id: actor.id.slice(0, 128) } : {}), ...(typeof actor.role === 'string' ? { role: actor.role.slice(0, 32) } : {}), ip: cleanIp(actor.ip), userAgent: cleanUserAgent(actor.userAgent) };
             const id = randomUUID();
             const changesState = mutating || !readActions.has(action);
             return new Promise((resolve, reject) => {
