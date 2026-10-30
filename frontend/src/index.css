@@ -1,3 +1,4 @@
+@import './themes.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,8 +8,18 @@ html, body, #root { min-height: 100%; }
 body {
   @apply bg-gray-950 text-gray-100 antialiased;
   font-feature-settings: "cv11", "ss01";
+  /* Two soft accent glows behind everything so the dark surface has depth. */
+  background-image:
+    radial-gradient(1200px 600px at 85% -10%, rgb(var(--a-600) / .16), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(var(--b-500) / .10), transparent 60%);
+  background-attachment: fixed;
 }
-::selection { background: rgba(255, 138, 61, .35); }
-/* Thin, visible scrollbars on the dark theme */
-* { scrollbar-width: thin; scrollbar-color: #353d4c transparent; }
-.xterm .xterm-viewport { scrollbar-color: #353d4c transparent; }
+::selection { background: rgb(var(--a-400) / .35); }
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--g-700)) transparent; }
+.xterm .xterm-viewport { scrollbar-color: rgb(var(--g-700)) transparent; }
+
+@layer components {
+  /* Frosted panel used by cards and the sidebar. */
+  .glass { @apply bg-gray-900/70 backdrop-blur-xl border border-white/[.06] shadow-card; }
+  .text-gradient { @apply bg-gradient-to-r from-accent-300 to-accent2-300 bg-clip-text text-transparent; }
+}

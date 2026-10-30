@@ -37,18 +37,26 @@ function Login({ authMode, onLogin }) {
 
     return (
         <div className="min-h-screen grid lg:grid-cols-2">
-            <div className="hidden lg:flex flex-col justify-between p-12 bg-gray-900 border-r border-gray-800">
-                <div className="flex items-center gap-3"><Logo size={40} /><span className="text-2xl font-extrabold text-white">Server<span className="text-ember-400">Forge</span></span></div>
-                <div>
-                    <h1 className="text-5xl font-extrabold leading-tight text-white">Run your game servers<br /><span className="text-ember-400">from one place.</span></h1>
-                    <p className="mt-5 text-lg text-gray-300">Install. Start. Watch the console. Back up.</p>
+            <div className="hidden lg:flex relative overflow-hidden flex-col justify-between p-12 border-r border-white/[.06] bg-gradient-to-br from-accent-900/60 via-gray-950 to-gray-950">
+                {/* Decorative grid + glow orbs; purely visual. */}
+                <div aria-hidden="true" className="absolute inset-0 opacity-[.07] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:48px_48px]" />
+                <div aria-hidden="true" className="absolute -top-40 -left-24 w-[520px] h-[520px] rounded-full bg-accent-500/30 blur-[120px]" />
+                <div aria-hidden="true" className="absolute -bottom-40 right-0 w-[460px] h-[460px] rounded-full bg-accent2-500/20 blur-[120px]" />
+                <div className="relative flex items-center gap-3"><Logo size={44} /><span className="text-2xl font-black tracking-tight text-white">Server<span className="text-gradient">Forge</span></span></div>
+                <div className="relative">
+                    <h1 className="text-6xl font-black tracking-tight leading-[1.05] text-white">Your game servers.<br /><span className="text-gradient">One control room.</span></h1>
+                    <div className="mt-8 flex flex-wrap gap-2">
+                        {['Install', 'Start', 'Live console', 'Schedules', 'Backups'].map(t => (
+                            <span key={t} className="px-3.5 h-9 inline-flex items-center rounded-full glass text-sm font-semibold text-gray-200">{t}</span>
+                        ))}
+                    </div>
                 </div>
-                <div className="text-sm text-gray-500">ServerForge</div>
+                <div className="relative text-sm text-gray-500">Self-hosted · LAN only</div>
             </div>
 
             <div className="flex items-center justify-center p-6">
-                <div className="w-full max-w-sm">
-                    <div className="lg:hidden flex items-center gap-3 mb-10"><Logo size={36} /><span className="text-xl font-extrabold text-white">Server<span className="text-ember-400">Forge</span></span></div>
+                <div className="w-full max-w-md glass rounded-3xl p-8 sm:p-10">
+                    <div className="lg:hidden flex items-center gap-3 mb-10"><Logo size={36} /><span className="text-xl font-black text-white">Server<span className="text-gradient">Forge</span></span></div>
                     {authMode === 'external' ? (
                         <div className="space-y-5">
                             <Shield size={40} className="text-ember-400" />

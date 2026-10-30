@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Server, Download, Settings as SettingsIcon, LogOut, ChevronRight, History, KeyRound } from 'lucide-react';
+import { Server, Download, Settings as SettingsIcon, LogOut, ChevronRight, History, KeyRound, Cpu, MemoryStick, HardDrive, Palette, Check } from 'lucide-react';
 import ServerList from './components/ServerList';
 import ServerControl from './components/ServerControl';
 import Installer from './components/Installer';
@@ -9,9 +9,11 @@ import Login from './components/Login';
 import ActivityLog from './components/ActivityLog';
 import ChangePassword from './components/ChangePassword';
 import { setToken } from './api';
+import { PageHeader, Meter } from './ui';
+import { THEMES, getTheme, applyTheme } from './theme';
 
-// App shell (claude overhaul, 2026-10-30): full-width top bar instead of a sidebar, so every
-// screen gets the whole desktop width. Server detail is reached from the Servers grid.
+// App shell (claude, UI v2 2026-10-30): full-width frosted top bar (Daniel prefers it to a sidebar)
+// with pill nav, live host load and a theme picker. Server detail is reached from the Servers grid.
 function App() {
     const [user, setUser] = useState(null);
     const [authMode, setAuthMode] = useState('local');
@@ -83,42 +85,46 @@ function App() {
 
     return (
         <div className="min-h-screen flex flex-col">
-            <header className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur border-b border-gray-800">
-                <div className="h-16 px-4 sm:px-8 flex items-center gap-4 sm:gap-8">
-                    <button onClick={() => go('servers')} className="flex items-center gap-2.5 shrink-0" aria-label="ServerForge home">
-                        <Logo />
-                        <span className="hidden sm:block text-lg font-extrabold tracking-tight text-white">Server<span className="text-ember-400">Forge</span></span>
+            <header className="sticky top-0 z-30 bg-gray-950/70 backdrop-blur-xl border-b border-white/[.06]">
+                <div className="h-[68px] px-4 sm:px-8 flex items-center gap-4 sm:gap-6">
+                    <button onClick={() => go('servers')} className="flex items-center gap-3 shrink-0" aria-label="ServerForge home">
+                        <Logo size={36} />
+                        <span className="hidden sm:block text-xl font-black tracking-tight text-white">Server<span className="text-gradient">Forge</span></span>
                     </button>
-                    <nav className="flex items-center gap-1 h-full">
+                    <nav className="flex items-center gap-1 p-1 rounded-2xl bg-white/[.03] border border-white/[.06]">
                         {nav.map(n => {
                             const on = tab === n.id;
                             return (
                                 <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined}
-                                    className={`relative h-full flex items-center gap-2 px-3 sm:px-4 font-semibold transition-colors ${on ? 'text-white' : 'text-gray-400 hover:text-white'}`}>
-                                    <n.icon size={18} />
-                                    <span className="hidden sm:inline">{n.label}</span>
-                                    {on && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-t bg-ember-400" />}
+                                    className={`h-10 flex items-center gap-2 px-3 sm:px-4 rounded-xl font-semibold transition-all ${on ? 'bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-glow' : 'text-gray-300 hover:text-white hover:bg-white/[.06]'}`}>
+                                    <n.icon size={17} />
+                                    <span className="hidden md:inline">{n.label}</span>
                                 </button>
                             );
                         })}
                     </nav>
-                    <div className="ml-auto flex items-center gap-3">
-                        <div className="hidden md:flex items-center gap-2.5">
-                            <span className="w-8 h-8 rounded-full bg-gray-800 ring-1 ring-gray-700 grid place-items-center text-xs font-bold uppercase text-gray-200">{user.username.slice(0, 2)}</span>
-                            <span className="text-sm font-semibold text-gray-200">{user.username}</span>
+                    <HostChips />
+                    <div className="ml-auto flex items-center gap-2 sm:gap-3">
+                        <ThemePicker />
+                        <div className="hidden md:flex items-center gap-2.5 pl-3 border-l border-white/10">
+                            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500 to-accent2-500 grid place-items-center text-xs font-black uppercase text-white">{user.username.slice(0, 2)}</span>
+                            <div className="leading-tight">
+                                <div className="text-sm font-bold text-white">{user.username}</div>
+                                <div className="text-xs text-gray-400 capitalize">{user.role}</div>
+                            </div>
                         </div>
                         {!user.cloudflare && (
-                            <button onClick={logout} className="h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800" title="Log out">
-                                <LogOut size={16} /><span className="hidden sm:inline">Log out</span>
+                            <button onClick={logout} className="h-10 w-10 rounded-xl grid place-items-center text-gray-300 hover:text-white hover:bg-white/[.06]" title="Log out" aria-label="Log out">
+                                <LogOut size={18} />
                             </button>
                         )}
                     </div>
                 </div>
             </header>
 
-            <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-8">
+            <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-8 space-y-6">
                 {server && (
-                    <div className="flex items-center gap-1.5 text-sm font-semibold mb-5">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold">
                         <button onClick={() => setServer(null)} className="text-gray-400 hover:text-white">Servers</button>
                         <ChevronRight size={14} className="text-gray-600" />
                         <span className="text-white truncate">{server.name}</span>
@@ -127,10 +133,67 @@ function App() {
                 {tab === 'servers' && !server && <ServerList onOpen={setServer} onInstall={() => go('installer')} isAdmin={user.role === 'admin'} />}
                 {tab === 'servers' && server && <ServerControl server={server} isAdmin={user.role === 'admin'} onDeleted={() => setServer(null)} />}
                 {tab === 'installer' && <Installer onDone={() => go('servers')} />}
-                {tab === 'settings' && <Settings />}
-                {tab === 'account' && <div className="space-y-6"><h1 className="text-3xl font-extrabold text-white">Account</h1><ChangePassword /></div>}
-                {tab === 'activity' && <div className="space-y-6"><h1 className="text-3xl font-extrabold text-white">Activity</h1><ActivityLog /></div>}
+                {tab === 'settings' && <><PageHeader title="Settings" sub="Panel options, users and the download cache." /><Settings /></>}
+                {tab === 'account' && <><PageHeader title="Account" sub={`Signed in as ${user.username}.`} /><ChangePassword /></>}
+                {tab === 'activity' && <><PageHeader title="Activity" sub="Every change made in the panel." /><ActivityLog /></>}
             </main>
+        </div>
+    );
+}
+
+// Live host load in the top bar (codex's GET /api/host). Hidden until the endpoint answers.
+function HostChips() {
+    const [host, setHost] = useState(null);
+    useEffect(() => {
+        let alive = true;
+        const load = () => axios.get('/api/host').then(r => alive && setHost(r.data)).catch(() => alive && setHost(null));
+        load();
+        const t = setInterval(load, 10000);
+        return () => { alive = false; clearInterval(t); };
+    }, []);
+    if (!host) return null;
+    const pct = (used, total) => (total ? Math.round((used / total) * 100) : null);
+    const chips = [
+        { icon: Cpu, label: 'CPU', v: host.cpuPercent },
+        { icon: MemoryStick, label: 'RAM', v: pct(host.memory?.used, host.memory?.total) },
+        { icon: HardDrive, label: 'Disk', v: pct(host.disk?.used, host.disk?.total) },
+    ];
+    return (
+        <div className="hidden xl:flex items-center gap-2">
+            {chips.filter(c => c.v !== null && c.v !== undefined).map(c => (
+                <div key={c.label} className="w-28 px-3 py-1.5 rounded-xl bg-white/[.03] border border-white/[.06]" title={`Host ${c.label}`}>
+                    <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                        <span className="flex items-center gap-1"><c.icon size={12} className="text-accent-300" />{c.label}</span>
+                        <span className="text-white tabular-nums">{Math.round(c.v)}%</span>
+                    </div>
+                    <Meter value={c.v} className="mt-1" />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ThemePicker() {
+    const [current, setCurrent] = useState(getTheme());
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="relative">
+            <button onClick={() => setOpen(o => !o)} className="h-10 w-10 rounded-xl grid place-items-center text-gray-300 hover:text-white hover:bg-white/[.06]" title="Colour theme" aria-label="Colour theme" aria-expanded={open}>
+                <Palette size={18} />
+            </button>
+            {open && (
+                <div className="absolute right-0 mt-2 w-56 p-2 glass rounded-2xl z-40" role="menu">
+                    {THEMES.map(t => (
+                        <button key={t.id} role="menuitemradio" aria-checked={current === t.id}
+                            onClick={() => { applyTheme(t.id); setCurrent(t.id); setOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-3 h-11 rounded-xl text-sm font-semibold ${current === t.id ? 'bg-white/[.08] text-white' : 'text-gray-300 hover:bg-white/[.05]'}`}>
+                            <span className="w-7 h-7 rounded-lg ring-1 ring-white/20" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
+                            {t.label}
+                            {current === t.id && <Check size={16} className="ml-auto text-accent-300" />}
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -138,10 +201,16 @@ function App() {
 export function Logo({ size = 32 }) {
     return (
         <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-            <rect width="32" height="32" rx="8" fill="#c4470a" />
+            <defs>
+                <linearGradient id="sf-logo" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="rgb(var(--a-500))" />
+                    <stop offset="1" stopColor="rgb(var(--b-500))" />
+                </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="9" fill="url(#sf-logo)" />
             <path d="M8 21h16l-2 4H10z" fill="#fff" />
             <path d="M11 9h10v4h-3v6h-4v-6h-3z" fill="#fff" />
-            <circle cx="24" cy="8" r="2" fill="#ffa766" />
+            <circle cx="24" cy="8" r="2" fill="#fff" opacity=".8" />
         </svg>
     );
 }

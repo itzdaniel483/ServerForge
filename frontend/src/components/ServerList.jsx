@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Play, Square, RotateCw, Server as ServerIcon, Plus, ArrowRight } from 'lucide-react';
-import { Button, Card, Status, Stat, Empty, Notice } from '../ui';
+import { Play, Square, RotateCw, Server as ServerIcon, Plus, ArrowRight, Activity, Users, AlertTriangle, Search } from 'lucide-react';
+import { Button, Card, Status, Stat, Empty, Notice, PageHeader, Meter, GameArt } from '../ui';
 import { errorText } from '../api';
 
-// Servers home (claude overhaul, 2026-10-30): totals across the top, then a full-width grid of cards.
+// Servers home (claude, UI v2 2026-10-30): totals, filter + search, then game-art cards.
 // Actions are always visible (they used to appear only on hover, so touch screens never saw them).
 function ServerList({ onOpen, onInstall, isAdmin }) {
     const [servers, setServers] = useState(null);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState({});
+    const [filter, setFilter] = useState('all');
+    const [search, setSearch] = useState('');
 
     const load = useCallback(async () => {
         try {
@@ -44,61 +46,92 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
 
     if (!servers) return <div className="text-gray-400">{error || 'Loading…'}</div>;
 
-    const online = servers.filter(s => s.status === 'running').length;
+    const online = servers.filter(s => s.status === 'running');
+    const players = online.reduce((n, s) => n + (Number(s.players) || 0), 0);
+    const needle = search.trim().toLowerCase();
+    const shown = servers.filter(s => (filter === 'all' || (filter === 'online') === (s.status === 'running'))
+        && (!needle || `${s.name} ${s.game}`.toLowerCase().includes(needle)));
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-                <h1 className="text-3xl font-extrabold text-white">Servers</h1>
-                {isAdmin && servers.length > 0 && <Button variant="primary" onClick={onInstall}><Plus size={18} />New server</Button>}
-            </div>
+            <PageHeader title="Servers" sub={servers.length ? `${online.length} of ${servers.length} online` : 'Install your first game server to get started.'}
+                actions={isAdmin && servers.length > 0 && <Button variant="primary" onClick={onInstall}><Plus size={18} />New server</Button>} />
 
             {error && <Notice>{error}</Notice>}
 
-            <div className="grid grid-cols-3 gap-3 sm:gap-4">
-                <Stat label="Total" value={servers.length} />
-                <Stat label="Online" value={online} tone={online ? 'text-go-300' : 'text-white'} />
-                <Stat label="Offline" value={servers.length - online} />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <Stat icon={ServerIcon} label="Servers" value={servers.length} />
+                <Stat icon={Activity} label="Online" value={online.length} tone={online.length ? 'text-go-300' : 'text-white'} meter={servers.length ? (online.length / servers.length) * 100 : 0} />
+                <Stat icon={Users} label="Players" value={players} sub={online.length ? 'across online servers' : 'no servers running'} />
+                <Stat icon={AlertTriangle} label="Need attention" value={servers.filter(s => s.status === 'failed').length}
+                    tone={servers.some(s => s.status === 'failed') ? 'text-stop-300' : 'text-white'} sub="failed installs" />
             </div>
 
             {servers.length === 0 ? (
-                <Empty icon={<ServerIcon size={56} />} title="No servers yet"
+                <Empty icon={<ServerIcon size={40} />} title="No servers yet" sub="Pick a game, name it, and ServerForge downloads and sets it up."
                     action={isAdmin && <Button variant="primary" size="lg" onClick={onInstall}><Plus size={18} />Install a server</Button>} />
             ) : (
-                <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
-                    {servers.map(s => {
-                        const on = s.status === 'running';
-                        return (
-                            <Card key={s.id} className={`p-5 flex flex-col gap-4 ${on ? 'ring-1 ring-go-500/30' : ''}`}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="text-lg font-bold text-white truncate">{s.name || 'Unnamed server'}</div>
-                                        <div className="text-sm text-gray-400 truncate">{s.game || 'Unknown game'}</div>
-                                    </div>
-                                    <Status status={s.status} />
-                                </div>
-                                <div className="flex items-center gap-4 text-sm">
-                                    <span className="text-gray-400">Port <span className="font-mono font-semibold text-gray-100">{s.port || 27015}</span></span>
-                                    {s.owner && <span className="text-gray-400 truncate">Owner <span className="font-semibold text-gray-100">{s.owner}</span></span>}
-                                </div>
-                                {s.installError && <div className="text-sm font-semibold text-red-300">{s.installError}</div>}
-                                <div className="mt-auto flex items-center gap-2">
-                                    {!(isAdmin || (s.perms || []).includes('power')) || s.status === 'installing' || s.status === 'failed' ? null : on ? (
-                                        <>
-                                            <Button variant="stop" size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop'])}><Square size={15} />Stop</Button>
-                                            <Button size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop', 'start'])} title="Restart"><RotateCw size={15} />Restart</Button>
-                                        </>
-                                    ) : (
-                                        <Button variant="go" size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['start'])}><Play size={15} />Start</Button>
-                                    )}
-                                    <Button variant="quiet" size="sm" className="ml-auto" onClick={() => onOpen(s)}>Open<ArrowRight size={15} /></Button>
-                                </div>
-                            </Card>
-                        );
-                    })}
-                </div>
+                <>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex p-1 rounded-xl bg-white/[.03] border border-white/[.06]">
+                            {['all', 'online', 'offline'].map(f => (
+                                <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f}
+                                    className={`h-9 px-4 rounded-lg text-sm font-semibold capitalize ${filter === f ? 'bg-white/[.1] text-white' : 'text-gray-400 hover:text-white'}`}>{f}</button>
+                            ))}
+                        </div>
+                        <div className="relative flex-1 min-w-[220px] max-w-md">
+                            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a server" aria-label="Find a server"
+                                className="w-full h-11 pl-10 pr-4 rounded-xl bg-white/[.03] border border-white/[.08] text-white placeholder-gray-500 focus:outline-none focus:border-accent-400" />
+                        </div>
+                    </div>
+
+                    <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
+                        {shown.map(s => <ServerCard key={s.id} s={s} isAdmin={isAdmin} busy={busy[s.id]} act={act} onOpen={onOpen} />)}
+                        {shown.length === 0 && <div className="text-gray-400 py-10">No servers match.</div>}
+                    </div>
+                </>
             )}
         </div>
+    );
+}
+
+function ServerCard({ s, isAdmin, busy, act, onOpen }) {
+    const on = s.status === 'running';
+    const canPower = (isAdmin || (s.perms || []).includes('power')) && s.status !== 'installing' && s.status !== 'failed';
+    const hasPlayers = on && s.maxPlayers;
+    return (
+        <Card className={`overflow-hidden flex flex-col transition-all hover:-translate-y-0.5 ${on ? 'ring-1 ring-go-500/40 shadow-[0_12px_40px_-16px_rgba(34,197,94,.45)]' : s.status === 'failed' ? 'ring-1 ring-stop-500/40' : 'hover:shadow-glow'}`}>
+            <button onClick={() => onOpen(s)} className="text-left" aria-label={`Open ${s.name}`}>
+                <GameArt gameId={s.gameId} name={s.game} className="h-36">
+                    <div className="absolute top-3 right-3"><Status status={s.status} /></div>
+                    <div className="absolute bottom-3 left-4 right-4">
+                        <div className="text-xl font-extrabold text-white truncate drop-shadow">{s.name || 'Unnamed server'}</div>
+                        <div className="text-sm font-medium text-gray-300 truncate">{s.game || 'Unknown game'}</div>
+                    </div>
+                </GameArt>
+            </button>
+            <div className="p-4 flex flex-col gap-4 flex-1">
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Port</div><div className="font-mono font-semibold text-gray-100">{s.port || '—'}</div></div>
+                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Players</div><div className="font-semibold text-gray-100 tabular-nums">{hasPlayers ? `${s.players ?? 0}/${s.maxPlayers}` : '—'}</div></div>
+                    <div className="min-w-0"><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Owner</div><div className="font-semibold text-gray-100 truncate">{s.owner || '—'}</div></div>
+                </div>
+                {hasPlayers ? <Meter value={(Number(s.players) / Number(s.maxPlayers)) * 100} /> : null}
+                {s.installError && <div className="text-sm font-semibold text-stop-300">{s.installError}</div>}
+                <div className="mt-auto flex items-center gap-2">
+                    {!canPower ? null : on ? (
+                        <>
+                            <Button variant="stop" size="sm" disabled={busy} onClick={() => act(s.id, ['stop'])}><Square size={15} />Stop</Button>
+                            <Button size="sm" disabled={busy} onClick={() => act(s.id, ['stop', 'start'])} title="Restart"><RotateCw size={15} />Restart</Button>
+                        </>
+                    ) : (
+                        <Button variant="go" size="sm" disabled={busy} onClick={() => act(s.id, ['start'])}><Play size={15} />Start</Button>
+                    )}
+                    <Button variant="quiet" size="sm" className="ml-auto" onClick={() => onOpen(s)}>Manage<ArrowRight size={15} /></Button>
+                </div>
+            </div>
+        </Card>
     );
 }
 
