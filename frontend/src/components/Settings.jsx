@@ -274,7 +274,7 @@ function CacheManager() {
                                         disabled={isDownloading}
                                         className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${isDownloading
                                             ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                            : 'bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white'
+                                            : 'bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white'
                                             }`}
                                     >
                                         <Download size={16} className={isDownloading ? 'animate-bounce' : ''} />
@@ -353,7 +353,7 @@ function SteamSettings() {
                             <button
                                 onClick={handleSave}
                                 disabled={saving}
-                                className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
+                                className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
                             >
                                 {saving ? 'Saving...' : 'Save'}
                             </button>
@@ -435,7 +435,7 @@ function UserManager() {
                 </div>
                 <button
                     onClick={() => setShowAddForm(true)}
-                    className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
+                    className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
                 >
                     <Plus size={18} />
                     Add User
@@ -640,7 +640,7 @@ function AuthSettings() {
                                     <button
                                         onClick={() => handleSave('external')}
                                         disabled={saving}
-                                        className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
+                                        className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50"
                                     >
                                         {saving ? 'Saving...' : 'Save Configuration'}
                                     </button>

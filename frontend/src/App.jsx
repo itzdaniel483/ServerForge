@@ -86,17 +86,18 @@ function App() {
     return (
         <div className="min-h-screen flex flex-col">
             <header className="sticky top-0 z-30 bg-gray-950/70 backdrop-blur-xl border-b border-white/[.06]">
-                <div className="h-[68px] px-4 sm:px-8 flex items-center gap-4 sm:gap-6">
+                <div className="min-h-[68px] px-4 sm:px-8 py-2 sm:py-0 flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2 sm:gap-6">
                     <button onClick={() => go('servers')} className="flex items-center gap-3 shrink-0" aria-label="ServerForge home">
                         <Logo size={36} />
                         <span className="hidden sm:block text-xl font-black tracking-tight text-white">Server<span className="text-gradient">Forge</span></span>
                     </button>
-                    <nav className="flex items-center gap-1 p-1 rounded-2xl bg-white/[.03] border border-white/[.06]">
+                    {/* Below sm the nav takes its own full-width row so the bar fits a 360px phone. */}
+                    <nav aria-label="Main" className="order-last sm:order-none w-full sm:w-auto flex items-center justify-between sm:justify-start gap-1 p-1 rounded-2xl bg-white/[.03] border border-white/[.06]">
                         {nav.map(n => {
                             const on = tab === n.id;
                             return (
-                                <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined}
-                                    className={`h-10 flex items-center gap-2 px-3 sm:px-4 rounded-xl font-semibold transition-all ${on ? 'bg-gradient-to-r from-accent-600 to-accent-500 text-white shadow-glow' : 'text-gray-300 hover:text-white hover:bg-white/[.06]'}`}>
+                                <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined} aria-label={n.label}
+                                    className={`h-10 flex items-center gap-2 px-3 sm:px-4 rounded-xl font-semibold transition-all ${on ? 'bg-gradient-to-r from-accent-800 to-accent-600 text-white shadow-glow' : 'text-gray-300 hover:text-white hover:bg-white/[.06]'}`}>
                                     <n.icon size={17} />
                                     <span className="hidden md:inline">{n.label}</span>
                                 </button>
@@ -166,7 +167,7 @@ function HostChips() {
                         <span className="flex items-center gap-1"><c.icon size={12} className="text-accent-300" />{c.label}</span>
                         <span className="text-white tabular-nums">{Math.round(c.v)}%</span>
                     </div>
-                    <Meter value={c.v} className="mt-1" />
+                    <Meter value={c.v} label={`Host ${c.label}`} className="mt-1" />
                 </div>
             ))}
         </div>
@@ -176,9 +177,20 @@ function HostChips() {
 function ThemePicker() {
     const [current, setCurrent] = useState(getTheme());
     const [open, setOpen] = useState(false);
+    const ref = React.useRef(null);
+    // Close on Escape or a click outside; focus the selected palette when the menu opens.
+    useEffect(() => {
+        if (!open) return undefined;
+        ref.current?.querySelector('[aria-checked="true"]')?.focus();
+        const onKey = e => { if (e.key === 'Escape') { setOpen(false); ref.current?.querySelector('button')?.focus(); } };
+        const onDown = e => { if (!ref.current?.contains(e.target)) setOpen(false); };
+        document.addEventListener('keydown', onKey);
+        document.addEventListener('mousedown', onDown);
+        return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
+    }, [open]);
     return (
-        <div className="relative">
-            <button onClick={() => setOpen(o => !o)} className="h-10 w-10 rounded-xl grid place-items-center text-gray-300 hover:text-white hover:bg-white/[.06]" title="Colour theme" aria-label="Colour theme" aria-expanded={open}>
+        <div className="relative" ref={ref}>
+            <button onClick={() => setOpen(o => !o)} className="h-10 w-10 rounded-xl grid place-items-center text-gray-300 hover:text-white hover:bg-white/[.06]" title="Colour theme" aria-label="Colour theme" aria-haspopup="menu" aria-expanded={open}>
                 <Palette size={18} />
             </button>
             {open && (

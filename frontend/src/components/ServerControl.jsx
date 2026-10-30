@@ -34,6 +34,30 @@ function ServerControl({ server, isAdmin, onDeleted }) {
     const id = server.id;
     const address = `${window.location.hostname}:${server.port || 27015}`;
 
+    // Page-wide: stay in this server's room (and rejoin after a reconnect) on every tab, so the hero
+    // stats keep updating and tabs like Updates still get their completion events.
+    useEffect(() => {
+        const socket = getSocket();
+        const watch = () => socket.emit('watch', id);
+        watch();
+        socket.on('connect', watch);
+        const onStatus = s => {
+            setStatus(s);
+            if (s !== 'running') { setStats({ cpu: 0, memory: 0 }); setQuery(null); }
+        };
+        socket.on(`server-status-${id}`, onStatus);
+        socket.on(`server-stats-${id}`, setStats);
+        socket.on(`server-query-${id}`, setQuery);
+        axios.get(`/api/server/${id}/status`).then(r => setStatus(r.data.status)).catch(() => {});
+        return () => {
+            socket.off('connect', watch);
+            socket.off(`server-status-${id}`, onStatus);
+            socket.off(`server-stats-${id}`, setStats);
+            socket.off(`server-query-${id}`, setQuery);
+        };
+    }, [id]);
+
+    // Console tab only: the terminal and its output.
     useEffect(() => {
         if (tab !== 'console') return undefined;
         const term = new Terminal({
@@ -50,30 +74,16 @@ function ServerControl({ server, isAdmin, onDeleted }) {
         window.addEventListener('resize', onResize);
 
         const socket = getSocket();
-        const watch = () => socket.emit('watch', id);   // join this server's live-log room
-        watch();
-        socket.on('connect', watch);
         const onLog = d => term.write(d);
-        const onStatus = s => {
-            setStatus(s);
-            term.write(s === 'running' ? '\r\n\x1b[32m● Server started\x1b[0m\r\n' : '\r\n\x1b[31m● Server stopped\x1b[0m\r\n');
-            if (s !== 'running') { setStats({ cpu: 0, memory: 0 }); setQuery(null); }
-        };
+        const onStatus = s => term.write(s === 'running' ? '\r\n\x1b[32m● Server started\x1b[0m\r\n' : '\r\n\x1b[31m● Server stopped\x1b[0m\r\n');
         socket.on(`server-log-${id}`, onLog);
         socket.on(`server-status-${id}`, onStatus);
-        socket.on(`server-stats-${id}`, setStats);
-        socket.on(`server-query-${id}`, setQuery);
-
-        axios.get(`/api/server/${id}/status`).then(r => setStatus(r.data.status)).catch(() => {});
         axios.get(`/api/server/${id}/logs`).then(r => { if (r.data) term.write(r.data); else term.write('\x1b[90mNo output yet. Start the server to see its console.\x1b[0m\r\n'); }).catch(() => {});
 
         return () => {
             window.removeEventListener('resize', onResize);
-            socket.off('connect', watch);
             socket.off(`server-log-${id}`, onLog);
             socket.off(`server-status-${id}`, onStatus);
-            socket.off(`server-stats-${id}`, setStats);
-            socket.off(`server-query-${id}`, setQuery);
             term.dispose();
             xtermRef.current = null;
         };

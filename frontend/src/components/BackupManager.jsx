@@ -94,7 +94,7 @@ function BackupManager({ serverId, canRestore = true }) {
                 <button
                     onClick={createBackup}
                     disabled={creating}
-                    className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 font-medium text-sm"
+                    className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 font-medium text-sm"
                 >
                     <Plus size={16} />
                     <span>{creating ? 'Creating Backup...' : 'Create Backup'}</span>

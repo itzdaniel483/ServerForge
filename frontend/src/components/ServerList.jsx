@@ -47,7 +47,9 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
     if (!servers) return <div className="text-gray-400">{error || 'Loading…'}</div>;
 
     const online = servers.filter(s => s.status === 'running');
-    const players = online.reduce((n, s) => n + (Number(s.players) || 0), 0);
+    // Player counts come from game queries and can be unknown (null); never show unknown as 0.
+    const known = online.filter(s => s.players !== null && s.players !== undefined);
+    const players = known.length ? known.reduce((n, s) => n + Number(s.players), 0) : null;
     const needle = search.trim().toLowerCase();
     const shown = servers.filter(s => (filter === 'all' || (filter === 'online') === (s.status === 'running'))
         && (!needle || `${s.name} ${s.game}`.toLowerCase().includes(needle)));
@@ -62,7 +64,8 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 <Stat icon={ServerIcon} label="Servers" value={servers.length} />
                 <Stat icon={Activity} label="Online" value={online.length} tone={online.length ? 'text-go-300' : 'text-white'} meter={servers.length ? (online.length / servers.length) * 100 : 0} />
-                <Stat icon={Users} label="Players" value={players} sub={online.length ? 'across online servers' : 'no servers running'} />
+                <Stat icon={Users} label="Players" value={players ?? '—'}
+                    sub={!online.length ? 'no servers running' : known.length < online.length ? `${online.length - known.length} server${online.length - known.length > 1 ? 's' : ''} not reporting` : 'across online servers'} />
                 <Stat icon={AlertTriangle} label="Need attention" value={servers.filter(s => s.status === 'failed').length}
                     tone={servers.some(s => s.status === 'failed') ? 'text-stop-300' : 'text-white'} sub="failed installs" />
             </div>
@@ -86,7 +89,7 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
                         </div>
                     </div>
 
-                    <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
+                    <div className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
                         {shown.map(s => <ServerCard key={s.id} s={s} isAdmin={isAdmin} busy={busy[s.id]} act={act} onOpen={onOpen} />)}
                         {shown.length === 0 && <div className="text-gray-400 py-10">No servers match.</div>}
                     </div>
@@ -99,7 +102,7 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
 function ServerCard({ s, isAdmin, busy, act, onOpen }) {
     const on = s.status === 'running';
     const canPower = (isAdmin || (s.perms || []).includes('power')) && s.status !== 'installing' && s.status !== 'failed';
-    const hasPlayers = on && s.maxPlayers;
+    const hasPlayers = on && s.maxPlayers && s.players !== null && s.players !== undefined;
     return (
         <Card className={`overflow-hidden flex flex-col transition-all hover:-translate-y-0.5 ${on ? 'ring-1 ring-go-500/40 shadow-[0_12px_40px_-16px_rgba(34,197,94,.45)]' : s.status === 'failed' ? 'ring-1 ring-stop-500/40' : 'hover:shadow-glow'}`}>
             <button onClick={() => onOpen(s)} className="text-left" aria-label={`Open ${s.name}`}>
@@ -114,10 +117,10 @@ function ServerCard({ s, isAdmin, busy, act, onOpen }) {
             <div className="p-4 flex flex-col gap-4 flex-1">
                 <div className="grid grid-cols-3 gap-3 text-sm">
                     <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Port</div><div className="font-mono font-semibold text-gray-100">{s.port || '—'}</div></div>
-                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Players</div><div className="font-semibold text-gray-100 tabular-nums">{hasPlayers ? `${s.players ?? 0}/${s.maxPlayers}` : '—'}</div></div>
+                    <div><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Players</div><div className="font-semibold text-gray-100 tabular-nums">{hasPlayers ? `${s.players}/${s.maxPlayers}` : '—'}</div></div>
                     <div className="min-w-0"><div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Owner</div><div className="font-semibold text-gray-100 truncate">{s.owner || '—'}</div></div>
                 </div>
-                {hasPlayers ? <Meter value={(Number(s.players) / Number(s.maxPlayers)) * 100} /> : null}
+                {hasPlayers ? <Meter value={(Number(s.players) / Number(s.maxPlayers)) * 100} label={`${s.name} players`} /> : null}
                 {s.installError && <div className="text-sm font-semibold text-stop-300">{s.installError}</div>}
                 <div className="mt-auto flex items-center gap-2">
                     {!canPower ? null : on ? (

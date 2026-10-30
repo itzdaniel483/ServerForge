@@ -3,7 +3,7 @@ import React from 'react';
 import axios from 'axios';
 
 const VARIANTS = {
-    primary: 'bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 text-white shadow-glow',
+    primary: 'bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 text-white shadow-glow',
     go: 'bg-go-600 hover:bg-go-500 text-white shadow-[0_8px_24px_-10px_rgba(22,163,74,.8)]',
     stop: 'bg-stop-600 hover:bg-stop-500 text-white shadow-[0_8px_24px_-10px_rgba(220,38,38,.8)]',
     ghost: 'bg-white/[.04] hover:bg-white/[.08] text-gray-100 border border-white/10',
@@ -51,17 +51,17 @@ export function Stat({ label, value, tone = '', icon: Icon, meter, sub }) {
             </div>
             <div className={`mt-1.5 text-2xl font-extrabold tabular-nums truncate ${tone || 'text-white'}`}>{value}</div>
             {sub && <div className="text-xs text-gray-400 truncate mt-0.5">{sub}</div>}
-            {meter !== undefined && <Meter value={meter} className="mt-3" />}
+            {meter !== undefined && <Meter value={meter} label={label} className="mt-3" />}
         </Card>
     );
 }
 
 // 0-100 bar; turns amber past 75 and red past 90 so a full disk or pegged CPU stands out.
-export function Meter({ value, className = '' }) {
+export function Meter({ value, label, className = '' }) {
     const v = Math.max(0, Math.min(100, Number(value) || 0));
     const fill = v > 90 ? 'from-stop-500 to-stop-400' : v > 75 ? 'from-warn-500 to-warn-400' : 'from-accent-500 to-accent2-400';
     return (
-        <div className={`h-1.5 rounded-full bg-white/[.06] overflow-hidden ${className}`} role="meter" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`h-1.5 rounded-full bg-white/[.06] overflow-hidden ${className}`} {...(label ? { role: 'meter', 'aria-label': label, 'aria-valuenow': Math.round(v), 'aria-valuemin': 0, 'aria-valuemax': 100 } : { 'aria-hidden': true })}>
             <div className={`h-full rounded-full bg-gradient-to-r ${fill} transition-[width] duration-700`} style={{ width: `${v}%` }} />
         </div>
     );
@@ -114,7 +114,11 @@ function loadArt(gameId) {
     if (!artCache.has(gameId)) {
         artCache.set(gameId, axios.get(`/api/art/${encodeURIComponent(gameId)}`, { responseType: 'blob' })
             .then(r => URL.createObjectURL(r.data))
-            .catch(() => null));
+            .catch(() => {
+                // Don't remember a failure for good: retry after a minute (backend restart, offline, re-login).
+                setTimeout(() => artCache.delete(gameId), 60000);
+                return null;
+            }));
     }
     return artCache.get(gameId);
 }
@@ -132,7 +136,7 @@ export function GameArt({ gameId, name = '', className = '', imgClassName = 'obj
     return (
         <div className={`relative overflow-hidden bg-gradient-to-br from-accent-700 via-gray-900 to-accent2-500/40 ${className}`}>
             {src ? (
-                <img src={src} alt="" className={`absolute inset-0 w-full h-full object-cover ${imgClassName}`} />
+                <img src={src} alt="" onError={() => setSrc(null)} className={`absolute inset-0 w-full h-full object-cover ${imgClassName}`} />
             ) : (
                 <div className="absolute inset-0 grid place-items-center text-6xl font-black tracking-tighter text-white/15 select-none">{initials}</div>
             )}

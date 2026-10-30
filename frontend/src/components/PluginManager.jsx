@@ -132,7 +132,7 @@ function PluginManager({ server }) {
                                     disabled={installing[plugin.id]}
                                     className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${installing[plugin.id]
                                         ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                        : 'bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white'
+                                        : 'bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white'
                                         }`}
                                 >
                                     <Download size={16} />
@@ -206,7 +206,7 @@ function PluginManager({ server }) {
                                 }}
                             />
                             <button
-                                className="bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow text-white px-4 py-2 rounded-lg font-medium"
+                                className="bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow text-white px-4 py-2 rounded-lg font-medium"
                                 onClick={() => handleWorkshopSearch(document.getElementById('workshopSearchInput').value)}
                             >
                                 Search

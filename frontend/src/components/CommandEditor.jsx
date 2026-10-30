@@ -165,7 +165,7 @@ function CommandEditor({ serverId, serverData }) {
                     <button
                         onClick={saveConfig}
                         disabled={saving}
-                        className="w-full bg-gradient-to-r from-accent-600 to-accent-500 hover:from-accent-500 hover:to-accent-400 shadow-glow disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center justify-center space-x-2 font-medium"
+                        className="w-full bg-gradient-to-r from-accent-800 to-accent-600 hover:from-accent-900 hover:to-accent-700 shadow-glow disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center justify-center space-x-2 font-medium"
                     >
                         <Save size={18} />
                         <span>{saving ? 'Saving...' : 'Save Configuration'}</span>

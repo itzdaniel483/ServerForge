@@ -83,7 +83,7 @@ export default function Installer({ onDone }) {
                             ))}
                         </div>
                     </div>
-                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
+                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr))]">
                         {shown.map(g => {
                             const on = game?.id === g.id;
                             return (
