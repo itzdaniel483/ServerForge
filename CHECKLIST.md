@@ -81,4 +81,4 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Servers/Nodes/Users as tables; compact server header + underline tabs; Install game list; plain login
 - [x] Tested 1440 + 390 every screen; multi-node mock 22/22; LIVE e987477
 - [ ] codex independent review (layout, keyboard, phone)
-- [ ] Daniel: keep sidebar or return to top bar?
+- [x] Daniel approved v3 ("Looks good", 14:36): sidebar stays
