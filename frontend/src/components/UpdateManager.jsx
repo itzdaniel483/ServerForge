@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { RefreshCw, Download, CheckCircle, AlertCircle } from 'lucide-react';
-import io from 'socket.io-client';
 
-const socket = io();
+import { getSocket } from '../api';
 
 function UpdateManager({ server }) {
     const [updating, setUpdating] = useState(false);
@@ -48,6 +47,7 @@ function UpdateManager({ server }) {
             }
         };
 
+        const socket = getSocket();
         socket.on(`update-log-${server.id}`, handleLog);
         socket.on(`update-complete-${server.id}`, handleComplete);
 

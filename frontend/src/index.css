@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { color-scheme: dark; }
+html, body, #root { min-height: 100%; }
 body {
-  @apply bg-gray-900 text-white;
+  @apply bg-gray-950 text-gray-100 antialiased;
+  font-feature-settings: "cv11", "ss01";
 }
+::selection { background: rgba(255, 138, 61, .35); }
+/* Thin, visible scrollbars on the dark theme */
+* { scrollbar-width: thin; scrollbar-color: #353d4c transparent; }
+.xterm .xterm-viewport { scrollbar-color: #353d4c transparent; }

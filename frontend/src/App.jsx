@@ -1,267 +1,138 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { Server, Download, Settings as SettingsIcon, LogOut, ChevronRight } from 'lucide-react';
 import ServerList from './components/ServerList';
 import ServerControl from './components/ServerControl';
 import Installer from './components/Installer';
 import Settings from './components/Settings';
 import Login from './components/Login';
-import { Server, LayoutDashboard, Download, Settings as SettingsIcon, LogOut, Menu, X } from 'lucide-react';
-import axios from 'axios';
+import { setToken } from './api';
 
+// App shell (claude overhaul, 2026-10-30): full-width top bar instead of a sidebar, so every
+// screen gets the whole desktop width. Server detail is reached from the Servers grid.
 function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('servers');
-  const [selectedServer, setSelectedServer] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [user, setUser] = useState(null);
+    const [authMode, setAuthMode] = useState('local');
+    const [loading, setLoading] = useState(true);
+    const [tab, setTab] = useState('servers');
+    const [server, setServer] = useState(null);
 
-  const checkAuth = async () => {
-    // Check if external auth is enabled FIRST
-    try {
-      const res = await axios.get('/api/settings');
-      if (res.data.authMode === 'external') {
-        // External auth mode - clear any local tokens
+    useEffect(() => {
+        (async () => {
+            let mode = 'local';
+            try { mode = (await axios.get('/api/auth-mode')).data.authMode; } catch { /* offline: show login */ }
+            setAuthMode(mode);
+            if (mode === 'external') {
+                setToken(null);
+                try {
+                    await axios.get('/api/servers');
+                    setUser({ username: 'Cloudflare user', role: 'admin', cloudflare: true });
+                } catch { /* not signed in through Cloudflare */ }
+            } else {
+                const token = localStorage.getItem('token');
+                const stored = localStorage.getItem('user');
+                if (token && stored) {
+                    setToken(token);
+                    try {
+                        await axios.get('/api/servers');   // token still valid?
+                        setUser(JSON.parse(stored));
+                    } catch {
+                        localStorage.removeItem('token'); localStorage.removeItem('user'); setToken(null);
+                    }
+                }
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    const logout = useCallback(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        delete axios.defaults.headers.common['Authorization'];
+        setToken(null);
+        setUser(null);
+        setServer(null);
+        setTab('servers');
+    }, []);
 
-        // Try to verify with backend (which will check for Cloudflare JWT or allow local testing)
-        try {
-          const serversRes = await axios.get('/api/servers');
-          console.log('Cloudflare auth check successful');
+    // Any 401 after login (expired token, deleted user) returns to the login screen.
+    useEffect(() => {
+        const id = axios.interceptors.response.use(r => r, err => {
+            if (err?.response?.status === 401 && authMode === 'local' && localStorage.getItem('token')) logout();
+            return Promise.reject(err);
+        });
+        return () => axios.interceptors.response.eject(id);
+    }, [authMode, logout]);
 
-          // If successful, we're authenticated (either via Cloudflare or local testing)
-          // Try to get user info to see if we're in local testing mode
-          try {
-            const usersRes = await axios.get('/api/users');
-            // If we can get users, we're authenticated as admin
-            setUser({ username: 'Local Test User', role: 'admin', localTesting: true });
-          } catch {
-            // Fallback to generic Cloudflare user
-            setUser({ username: 'Cloudflare User', role: 'admin' });
-          }
-        } catch (err) {
-          // Not authenticated - will show login screen with Cloudflare message
-          console.log('Not authenticated via Cloudflare:', err.message);
-        }
-        setLoading(false);
-        return;
-      }
-    } catch (err) {
-      console.error('Failed to check auth settings:', err);
-    }
+    if (loading) return <div className="min-h-screen grid place-items-center text-gray-400">Loading…</div>;
+    if (!user) return <Login authMode={authMode} onLogin={setUser} />;
 
-    // Local auth mode - check for token
-    const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    const go = t => { setTab(t); setServer(null); };
+    const nav = [
+        { id: 'servers', label: 'Servers', icon: Server },
+        ...(user.role === 'admin' ? [{ id: 'installer', label: 'Install', icon: Download }, { id: 'settings', label: 'Settings', icon: SettingsIcon }] : []),
+    ];
 
-    if (token && storedUser) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(JSON.parse(storedUser));
-    }
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    checkAuth();
-  }, []);
-
-  const handleLogout = async () => {
-    // Check if we're in Cloudflare mode
-    try {
-      const res = await axios.get('/api/settings');
-      if (res.data.authMode === 'external') {
-        // In Cloudflare mode, show a message
-        const confirmLogout = window.confirm(
-          'You are using Cloudflare Zero Trust authentication.\n\n' +
-          'Clicking OK will clear your local session, but Cloudflare will automatically re-authenticate you when you refresh.\n\n' +
-          'To fully log out, you need to log out of Cloudflare Access:\n' +
-          '1. Visit: https://bytemypc.cloudflareaccess.com\n' +
-          '2. Click your profile and select "Logout"\n\n' +
-          'Continue with local logout?'
-        );
-
-        if (!confirmLogout) return;
-      }
-    } catch (err) {
-      console.error('Failed to check auth mode:', err);
-    }
-
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    delete axios.defaults.headers.common['Authorization'];
-    setUser(null);
-  };
-
-  const handleSelectServer = (server) => {
-    setSelectedServer(server);
-    setActiveTab('dashboard');
-  };
-
-  if (loading) {
     return (
-      <div className="min-h-screen bg-[#0b0f19] flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
-      </div>
+        <div className="min-h-screen flex flex-col">
+            <header className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur border-b border-gray-800">
+                <div className="h-16 px-4 sm:px-8 flex items-center gap-4 sm:gap-8">
+                    <button onClick={() => go('servers')} className="flex items-center gap-2.5 shrink-0" aria-label="ServerForge home">
+                        <Logo />
+                        <span className="hidden sm:block text-lg font-extrabold tracking-tight text-white">Server<span className="text-ember-400">Forge</span></span>
+                    </button>
+                    <nav className="flex items-center gap-1 h-full">
+                        {nav.map(n => {
+                            const on = tab === n.id;
+                            return (
+                                <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined}
+                                    className={`relative h-full flex items-center gap-2 px-3 sm:px-4 font-semibold transition-colors ${on ? 'text-white' : 'text-gray-400 hover:text-white'}`}>
+                                    <n.icon size={18} />
+                                    <span className="hidden sm:inline">{n.label}</span>
+                                    {on && <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-t bg-ember-400" />}
+                                </button>
+                            );
+                        })}
+                    </nav>
+                    <div className="ml-auto flex items-center gap-3">
+                        <div className="hidden md:flex items-center gap-2.5">
+                            <span className="w-8 h-8 rounded-full bg-gray-800 ring-1 ring-gray-700 grid place-items-center text-xs font-bold uppercase text-gray-200">{user.username.slice(0, 2)}</span>
+                            <span className="text-sm font-semibold text-gray-200">{user.username}</span>
+                        </div>
+                        {!user.cloudflare && (
+                            <button onClick={logout} className="h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800" title="Log out">
+                                <LogOut size={16} /><span className="hidden sm:inline">Log out</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-8">
+                {server && (
+                    <div className="flex items-center gap-1.5 text-sm font-semibold mb-5">
+                        <button onClick={() => setServer(null)} className="text-gray-400 hover:text-white">Servers</button>
+                        <ChevronRight size={14} className="text-gray-600" />
+                        <span className="text-white truncate">{server.name}</span>
+                    </div>
+                )}
+                {tab === 'servers' && !server && <ServerList onOpen={setServer} onInstall={() => go('installer')} isAdmin={user.role === 'admin'} />}
+                {tab === 'servers' && server && <ServerControl server={server} isAdmin={user.role === 'admin'} onDeleted={() => setServer(null)} />}
+                {tab === 'installer' && <Installer onDone={() => go('servers')} />}
+                {tab === 'settings' && <Settings />}
+            </main>
+        </div>
     );
-  }
-
-  if (!user) {
-    return <Login onLogin={setUser} />;
-  }
-
-  return (
-    <div className="flex h-screen bg-[#0b0f19] text-white font-sans overflow-hidden selection:bg-blue-500/30">
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-20' : 'w-72'} bg-[#111827]/80 backdrop-blur-xl border-r border-gray-800/50 flex flex-col shadow-2xl relative z-20 transition-all duration-300`}>
-        {/* Toggle Button */}
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="absolute -right-3 top-8 w-6 h-6 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center text-white shadow-lg transition-colors z-30"
-        >
-          {sidebarCollapsed ? <Menu size={14} /> : <X size={14} />}
-        </button>
-
-        <div className="p-6 mb-2">
-          {!sidebarCollapsed ? (
-            <>
-              <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 tracking-tight">
-                SERVER<span className="font-light text-gray-400">FORGE</span>
-              </h1>
-              <p className="text-xs text-gray-500 mt-1 font-medium tracking-wider uppercase">Server Management System</p>
-            </>
-          ) : (
-            <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 text-center">
-              S
-            </div>
-          )}
-        </div>
-
-        <nav className="flex-1 px-4 space-y-3">
-          <NavButton
-            active={activeTab === 'servers'}
-            onClick={() => setActiveTab('servers')}
-            icon={<Server size={24} />}
-            label="Servers"
-            collapsed={sidebarCollapsed}
-          />
-          <NavButton
-            active={activeTab === 'dashboard'}
-            onClick={() => setActiveTab('dashboard')}
-            icon={<LayoutDashboard size={24} />}
-            label="Console"
-            collapsed={sidebarCollapsed}
-          />
-          <NavButton
-            active={activeTab === 'installer'}
-            onClick={() => setActiveTab('installer')}
-            icon={<Download size={24} />}
-            label="Installer"
-            collapsed={sidebarCollapsed}
-          />
-          <NavButton
-            active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
-            icon={<SettingsIcon size={24} />}
-            label="Settings"
-            collapsed={sidebarCollapsed}
-          />
-        </nav>
-
-        <div className="p-6 mt-auto border-t border-gray-800/50 space-y-3">
-          {!sidebarCollapsed ? (
-            <>
-              <div className="flex items-center space-x-3 bg-gray-800/50 p-3 rounded-xl border border-gray-700/50">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold uppercase">
-                  {user.username.substring(0, 2)}
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-bold text-gray-200">{user.username}</div>
-                  <div className="text-xs text-gray-500 capitalize">{user.role}</div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-4 py-2 rounded-lg font-medium transition-colors border border-red-600/50"
-              >
-                <LogOut size={16} />
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="flex justify-center">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold uppercase">
-                  {user.username.substring(0, 2)}
-                </div>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white p-3 rounded-lg transition-colors border border-red-600/50"
-                title="Logout"
-              >
-                <LogOut size={18} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto relative">
-        {/* Background Gradients */}
-        <div className="absolute top-0 left-0 w-full h-96 bg-blue-500/5 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-full h-96 bg-purple-500/5 blur-[120px] pointer-events-none" />
-
-        <div className="relative z-10 p-10 max-w-7xl mx-auto">
-          <header className="mb-10 flex justify-between items-center">
-            <div>
-              <h2 className="text-3xl font-bold text-white mb-2">
-                {activeTab === 'dashboard' && selectedServer ? selectedServer.name : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-              </h2>
-              <p className="text-gray-400">
-                {activeTab === 'servers' && 'Manage your game servers'}
-                {activeTab === 'dashboard' && 'Server console and controls'}
-                {activeTab === 'installer' && 'Install new game servers'}
-                {activeTab === 'settings' && 'Configure your panel'}
-              </p>
-            </div>
-          </header>
-
-          <main>
-            {activeTab === 'servers' && <ServerList onSelectServer={handleSelectServer} />}
-            {activeTab === 'dashboard' && selectedServer && <ServerControl server={selectedServer} />}
-            {activeTab === 'dashboard' && !selectedServer && (
-              <div className="text-center text-gray-500 py-20">
-                <Server size={64} className="mx-auto mb-4 opacity-20" />
-                <p>Select a server from the Servers tab to view its console</p>
-              </div>
-            )}
-            {activeTab === 'installer' && <Installer />}
-            {activeTab === 'settings' && <Settings />}
-          </main>
-        </div>
-      </div>
-    </div>
-  );
 }
 
-function NavButton({ active, onClick, icon, label, collapsed }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center ${collapsed ? 'justify-center' : 'space-x-4'} px-5 py-4 rounded-xl font-semibold text-base transition-all ${active
-        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20'
-        : 'text-gray-400 hover:bg-gray-800/50 hover:text-white'
-        }`}
-      title={collapsed ? label : ''}
-    >
-      {icon}
-      {!collapsed && <span>{label}</span>}
-    </button>
-  );
+export function Logo({ size = 32 }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+            <rect width="32" height="32" rx="8" fill="#c4470a" />
+            <path d="M8 21h16l-2 4H10z" fill="#fff" />
+            <path d="M11 9h10v4h-3v6h-4v-6h-3z" fill="#fff" />
+            <circle cx="24" cy="8" r="2" fill="#ffa766" />
+        </svg>
+    );
 }
 
 export default App;

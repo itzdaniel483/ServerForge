@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Archive, RotateCcw, Trash2, Plus, Clock, HardDrive } from 'lucide-react';
 
-function BackupManager({ serverId }) {
+function BackupManager({ serverId, canRestore = true }) {
     const [backups, setBackups] = useState([]);
     const [loading, setLoading] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -63,7 +63,7 @@ function BackupManager({ serverId }) {
 
         setDeleting(filename);
         try {
-            await axios.delete(`/api/server/${serverId}/backups/${filename}`);
+            await axios.delete(`/api/server/${serverId}/backups/${encodeURIComponent(filename)}`);
             await fetchBackups();
         } catch (err) {
             alert(`Delete failed: ${err.response?.data?.error || err.message}`);
@@ -135,6 +135,7 @@ function BackupManager({ serverId }) {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right space-x-2">
+                                        {canRestore && <>
                                         <button
                                             onClick={() => restoreBackup(backup.filename)}
                                             disabled={restoring === backup.filename}
@@ -151,6 +152,7 @@ function BackupManager({ serverId }) {
                                         >
                                             <Trash2 size={18} />
                                         </button>
+                                        </>}
                                     </td>
                                 </tr>
                             ))

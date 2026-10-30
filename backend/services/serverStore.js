@@ -1,7 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'servers.json');
+const DATA_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'servers.json');
 
 class ServerStore {
     constructor() {

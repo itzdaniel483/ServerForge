@@ -3,7 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const steamcmd = require('./steamcmd');
 
-const CACHE_DIR = path.join(__dirname, '../..', 'cache');
+const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '../..', 'cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
 
 class CacheService {

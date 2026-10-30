@@ -42,17 +42,6 @@ function PluginManager({ server }) {
         }
     };
 
-    const handleUninstall = async (pluginId) => {
-        if (!confirm('Are you sure you want to uninstall this plugin?')) return;
-
-        try {
-            await axios.delete(`/api/server/${server.id}/plugins/${pluginId}`);
-            await fetchPlugins();
-        } catch (err) {
-            alert(`Failed to uninstall plugin: ${err.response?.data?.error || err.message}`);
-        }
-    };
-
     const handleWorkshopSearch = async (queryOverride) => {
         const searchQuery = queryOverride !== undefined ? queryOverride : '';
 
@@ -111,13 +100,7 @@ function PluginManager({ server }) {
                                         <p className="text-xs text-gray-400">{plugin.description}</p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => handleUninstall(plugin.id)}
-                                    className="text-gray-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded-lg transition-colors"
-                                    title="Uninstall"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
+                                {/* Uninstall button removed: the backend has no uninstall route (claude, 2026-10-30). */}
                             </div>
                         ))}
                     </div>
@@ -191,7 +174,7 @@ function PluginManager({ server }) {
                                 onClick={async () => {
                                     const id = document.getElementById('collectionIdInput').value;
                                     try {
-                                        await axios.put(`/api/server/${server.id}/workshop`, { collectionId: id });
+                                        await axios.post(`/api/server/${server.id}/workshop`, { collectionId: id });
                                         alert('Workshop collection updated! Restart server to apply.');
                                     } catch (err) {
                                         alert('Failed to update collection: ' + err.message);

@@ -1,13 +1,15 @@
 const jwt = require('jsonwebtoken');
 const settingsStore = require('../services/settingsStore');
+const userStore = require('../services/userStore');
 const axios = require('axios');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'tcadmin-secret-key-change-this';
+const { loadJwtSecret } = require('./guard');
 
-// Warn if using default secret in production
-if (JWT_SECRET === 'tcadmin-secret-key-change-this' && process.env.NODE_ENV === 'production') {
-    console.warn('⚠️  WARNING: Using default JWT_SECRET in production! Set JWT_SECRET environment variable.');
-}
+// Never a hard-coded default: anyone who knew it could sign their own admin token.
+const JWT_SECRET = loadJwtSecret();
+
+// Only real Cloudflare Access team domains, so a changed setting can't point key lookups at a forger's server.
+const validTeamDomain = d => /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(String(d || ''));
 
 
 // Cache for Cloudflare public keys
@@ -28,8 +30,9 @@ async function getCloudflarePublicKeys(teamDomain) {
 
     try {
         // Cloudflare publishes their public keys at this endpoint
+        if (!validTeamDomain(teamDomain)) throw new Error('Team domain must look like https://<team>.cloudflareaccess.com');
         const certsUrl = `${teamDomain}/cdn-cgi/access/certs`;
-        const response = await axios.get(certsUrl);
+        const response = await axios.get(certsUrl, { timeout: 10000, maxRedirects: 0 });
 
         cfPublicKeysCache = response.data;
         cfKeysCacheTime = now;
@@ -77,9 +80,10 @@ async function verifyCloudflareJWT(token, teamDomain, audience) {
 }
 
 const authMiddleware = async (req, res, next) => {
-    // Public routes that don't require authentication
-    const publicRoutes = ['/api/login', '/api/settings', '/api/debug/headers'];
-    if (publicRoutes.includes(req.originalUrl)) {
+    // Public routes, matched on method AND path. (Before: '/api/settings' was public for every method,
+    // so anyone could POST new auth settings and take over the panel.)
+    const route = `${req.method} ${req.originalUrl.split('?')[0]}`;
+    if (route === 'POST /api/login' || route === 'GET /api/auth-mode') {
         return next();
     }
 
@@ -91,10 +95,10 @@ const authMiddleware = async (req, res, next) => {
             // Check for Cloudflare Access JWT
             const cfJwt = req.headers['cf-access-jwt-assertion'];
 
-            // If no Cloudflare JWT, allow for local testing in development only
+            // No Cloudflare JWT: refuse, unless local testing was switched on explicitly.
             if (!cfJwt) {
                 console.log('[Auth] No Cloudflare JWT found in headers');
-                if (process.env.NODE_ENV === 'production') {
+                if (process.env.ALLOW_DEV_AUTH !== '1') {
                     return res.status(401).json({
                         error: 'Cloudflare Access JWT required. Please access this application through your Cloudflare Access URL.'
                     });
@@ -146,10 +150,7 @@ const authMiddleware = async (req, res, next) => {
                 return next();
             } catch (err) {
                 console.error('[Auth] Cloudflare JWT verification failed:', err.message);
-                return res.status(401).json({
-                    error: 'Invalid Cloudflare Access JWT',
-                    details: err.message
-                });
+                return res.status(401).json({ error: 'Invalid Cloudflare Access JWT' });
             }
         }
 
@@ -162,8 +163,11 @@ const authMiddleware = async (req, res, next) => {
         const token = authHeader.substring(7);
 
         try {
-            const decoded = jwt.verify(token, JWT_SECRET);
-            req.user = decoded;
+            const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+            // Use the stored role, so a deleted or demoted user's old token stops working.
+            const current = (await userStore.getUsers()).find(u => u.id === decoded.id);
+            if (!current) return res.status(401).json({ error: 'Invalid token' });
+            req.user = { id: current.id, username: current.username, role: current.role };
             next();
         } catch (err) {
             return res.status(401).json({ error: 'Invalid token' });
@@ -174,4 +178,21 @@ const authMiddleware = async (req, res, next) => {
     }
 };
 
-module.exports = { authMiddleware, JWT_SECRET };
+// Socket.IO uses the same rules: a local token in the handshake, or a verified Cloudflare JWT.
+async function socketAuth(socket, next) {
+    try {
+        const settings = await settingsStore.getSettings();
+        if (settings.authMode === 'external') {
+            const cfJwt = socket.handshake.headers['cf-access-jwt-assertion'];
+            if (!cfJwt) return next(process.env.ALLOW_DEV_AUTH === '1' ? undefined : new Error('unauthorized'));
+            await verifyCloudflareJWT(cfJwt, settings.cfAccessTeamDomain, settings.cfAccessAud);
+            return next();
+        }
+        jwt.verify(String(socket.handshake.auth?.token || ''), JWT_SECRET, { algorithms: ['HS256'] });
+        return next();
+    } catch {
+        return next(new Error('unauthorized'));
+    }
+}
+
+module.exports = { authMiddleware, socketAuth, JWT_SECRET, validTeamDomain };

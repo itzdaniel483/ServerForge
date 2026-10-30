@@ -31,7 +31,7 @@ function Settings() {
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-white">Settings</h2>
+                <h1 className="text-3xl font-extrabold text-white">Settings</h1>
             </div>
 
             {/* Tabs */}
@@ -75,14 +75,14 @@ function Settings() {
             </div>
 
             {activeTab === 'general' && (
-                <div className="bg-[#111827]/80 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6">
+                <div className="bg-gray-900 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6">
                     <div>
                         <h3 className="text-xl font-bold text-white mb-2 flex items-center">
                             <SettingsIcon size={20} className="mr-3 text-blue-400" />
                             System Information
                         </h3>
                         <p className="text-gray-400 text-sm mb-6">
-                            Information about the TCadmin backend system
+                            About this panel
                         </p>
                     </div>
 
@@ -93,7 +93,7 @@ function Settings() {
                                 <div className="flex-1">
                                     <h4 className="text-lg font-semibold text-white mb-2">Restart Backend</h4>
                                     <p className="text-gray-400 text-sm mb-4">
-                                        To restart the TCadmin backend, go to your terminal running <code className="bg-gray-800 px-2 py-1 rounded text-sm text-blue-300">npm start</code> and press <kbd className="bg-gray-700 px-2 py-1 rounded text-sm border border-gray-600">Ctrl+C</kbd>, then run <code className="bg-gray-800 px-2 py-1 rounded text-sm text-green-300">npm start</code> again.
+                                        Restart ServerForge from the server console (Apps → ServerForge → Restart).
                                     </p>
                                     <div className="flex items-center text-yellow-400 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
                                         <AlertTriangle size={16} className="mr-2 flex-shrink-0" />
@@ -207,14 +207,14 @@ function CacheManager() {
 
     if (loading) {
         return (
-            <div className="bg-[#111827]/80 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8">
+            <div className="bg-gray-900 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8">
                 <div className="text-center text-gray-400">Loading cache information...</div>
             </div>
         );
     }
 
     return (
-        <div className="bg-[#111827]/80 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6 relative">
+        <div className="bg-gray-900 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6 relative">
             {/* Success Modal */}
             {showSuccessModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -316,6 +316,7 @@ function CacheManager() {
 
 function SteamSettings() {
     const [apiKey, setApiKey] = useState('');
+    const [keySet, setKeySet] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
@@ -323,7 +324,8 @@ function SteamSettings() {
     useEffect(() => {
         axios.get('/api/settings')
             .then(res => {
-                setApiKey(res.data.steamApiKey || '');
+                // The server never sends the key back, only whether one is saved.
+                setKeySet(!!res.data.steamApiKeySet);
                 setLoading(false);
             })
             .catch(err => {
@@ -337,6 +339,8 @@ function SteamSettings() {
         setSuccess(false);
         try {
             await axios.post('/api/settings', { steamApiKey: apiKey });
+            if (apiKey.trim()) setKeySet(true);
+            setApiKey('');
             setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
         } catch {
@@ -367,7 +371,7 @@ function SteamSettings() {
                                 type="password"
                                 value={apiKey}
                                 onChange={(e) => setApiKey(e.target.value)}
-                                placeholder="Enter your 32-character API Key"
+                                placeholder={keySet ? 'Saved. Type a new key to replace it' : 'Enter your 32-character API Key'}
                                 className="flex-1 bg-gray-950 text-white px-4 py-2 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
                             />
                             <button
@@ -442,7 +446,7 @@ function UserManager() {
     if (loading) return <div className="text-gray-400">Loading users...</div>;
 
     return (
-        <div className="bg-[#111827]/80 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6">
+        <div className="bg-gray-900 rounded-2xl border border-gray-800/50 shadow-xl backdrop-blur-sm p-8 space-y-6">
             <div className="flex justify-between items-center">
                 <div>
                     <h3 className="text-xl font-bold text-white mb-2 flex items-center">
@@ -581,8 +585,8 @@ function AuthSettings() {
             setAuthMode(mode);
             setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
-        } catch {
-            alert('Failed to save settings');
+        } catch (err) {
+            alert('Failed to save settings: ' + (err.response?.data?.error || err.message));
         } finally {
             setSaving(false);
         }

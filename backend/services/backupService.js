@@ -4,7 +4,7 @@ const AdmZip = require('adm-zip');
 
 class BackupService {
     constructor() {
-        this.backupsDir = path.join(__dirname, '../backups');
+        this.backupsDir = process.env.BACKUPS_DIR || path.join(__dirname, '../backups');
         fs.ensureDirSync(this.backupsDir);
     }
 

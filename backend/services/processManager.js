@@ -1,12 +1,18 @@
-// C:\Users\dobbi\Desktop\TCadmin\backend\services\processManager.js
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 const path = require('path');
+const pidusage = require('pidusage');
 
 class ProcessManager extends EventEmitter {
     constructor() {
         super();
         this.processes = new Map(); // id → { process, logs, startTime }
+        // CPU/RAM for each running server every 3s. The UI listened for these but nothing sent them.
+        setInterval(() => {
+            for (const [id, entry] of this.processes) {
+                pidusage(entry.process.pid).then(s => this.emit('stats', { id, stats: { cpu: s.cpu, memory: s.memory } })).catch(() => {});
+            }
+        }, 3000).unref();
     }
 
     /**
@@ -54,6 +60,13 @@ class ProcessManager extends EventEmitter {
             this.appendLog(id, msg);
         });
 
+        // A missing or non-runnable program fires 'error'; without a handler it would crash the whole panel.
+        child.on('error', err => {
+            this.appendLog(id, `Could not start: ${err.message}\n`);
+            this.processes.delete(id);
+            this.emit('status-change', { id, status: 'stopped', code: null });
+        });
+
         // When the process ends
         child.on('close', code => {
             console.log(`Process ${id} exited with code ${code}`);
@@ -70,7 +83,9 @@ class ProcessManager extends EventEmitter {
         const entry = this.processes.get(id);
         if (!entry) return false;
         try {
-            process.kill(entry.process.pid);
+            // Started detached, so on Linux/macOS signal the whole process group (the game spawns children).
+            if (process.platform !== 'win32') process.kill(-entry.process.pid, 'SIGTERM');
+            else process.kill(entry.process.pid);
         } catch (err) {
             console.error(`Failed to kill process ${id}:`, err);
         }

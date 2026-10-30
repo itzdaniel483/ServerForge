@@ -1,9 +1,9 @@
 const fs = require('fs-extra');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'users.json');
+const DATA_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'users.json');
 
 class UserStore {
     constructor() {
@@ -24,20 +24,32 @@ class UserStore {
             console.error('Failed to load users:', err);
         }
 
-        // Create default admin if no users exist
+        // First run: create 'admin' with ADMIN_PASSWORD, or a random password saved to data/initial-admin-password
+        // (owner-only file). Never the old admin/admin default.
         if (this.users.length === 0) {
-            console.log('No users found. Creating default admin account.');
-            await this.addUser('admin', 'admin', 'admin');
+            let password = process.env.ADMIN_PASSWORD;
+            if (!password || password.length < 8) {
+                password = require('crypto').randomBytes(12).toString('base64url');
+                const file = path.join(path.dirname(DATA_FILE), 'initial-admin-password');
+                await fs.writeFile(file, password + '\n', { mode: 0o600 });
+                console.log(`No users found. Created 'admin'; its password is in ${file}`);
+            } else {
+                console.log("No users found. Created 'admin' with ADMIN_PASSWORD.");
+            }
+            await this.addUser('admin', password, 'admin');
         }
 
         this.initialized = true;
     }
 
     async save() {
-        await fs.writeFile(DATA_FILE, JSON.stringify(this.users, null, 2));
+        await fs.writeFile(DATA_FILE, JSON.stringify(this.users, null, 2), { mode: 0o600 });
     }
 
     async addUser(username, password, role = 'user') {
+        if (typeof username !== 'string' || !/^[\w.@-]{1,32}$/.test(username)) throw new Error('Username: 1-32 letters, numbers, . _ @ or -');
+        if (typeof password !== 'string' || password.length < 8) throw new Error('Password must be at least 8 characters');
+        if (!['admin', 'user'].includes(role)) throw new Error('Role must be admin or user');
         // Check if user already exists
         if (this.users.find(u => u.username === username)) {
             throw new Error('Username already exists');
@@ -62,7 +74,10 @@ class UserStore {
     async authenticate(username, password) {
         await this.init();
         const user = this.users.find(u => u.username === username);
-        if (!user) return null;
+        if (!user) {
+            await bcrypt.compare(password, '$2a$10$CwTycUXWue0Thq9StjUM0uJ8DPLKXt1FYlwYpaW7d1a6X1L8YkqWa'); // same time as a real check
+            return null;
+        }
 
         const isValid = await bcrypt.compare(password, user.passwordHash);
         if (!isValid) return null;

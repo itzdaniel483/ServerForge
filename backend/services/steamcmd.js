@@ -4,9 +4,13 @@ const axios = require('axios');
 const AdmZip = require('adm-zip');
 const { spawn } = require('child_process');
 
-const STEAMCMD_URL = 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip';
-const INSTALL_DIR = path.join(__dirname, '..', 'steamcmd');
-const EXECUTABLE = path.join(INSTALL_DIR, 'steamcmd.exe');
+const IS_WIN = process.platform === 'win32';
+const STEAMCMD_URL = IS_WIN
+    ? 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip'
+    : 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz';
+// Downloaded on first use; never committed to git.
+const INSTALL_DIR = process.env.STEAMCMD_DIR || path.join(__dirname, '..', 'steamcmd');
+const EXECUTABLE = path.join(INSTALL_DIR, IS_WIN ? 'steamcmd.exe' : 'steamcmd.sh');
 
 class SteamCMD {
     constructor() {
@@ -25,7 +29,7 @@ class SteamCMD {
 
     async downloadAndExtract() {
         await fs.ensureDir(INSTALL_DIR);
-        const zipPath = path.join(INSTALL_DIR, 'steamcmd.zip');
+        const zipPath = path.join(INSTALL_DIR, IS_WIN ? 'steamcmd.zip' : 'steamcmd_linux.tar.gz');
 
         const writer = fs.createWriteStream(zipPath);
         const response = await axios({
@@ -38,13 +42,24 @@ class SteamCMD {
 
         return new Promise((resolve, reject) => {
             writer.on('finish', async () => {
-                console.log('Download complete. Extracting...');
-                const zip = new AdmZip(zipPath);
-                zip.extractAllTo(INSTALL_DIR, true);
-                fs.unlinkSync(zipPath); // Cleanup
-                this.ready = true;
-                console.log('SteamCMD ready.');
-                resolve();
+                try {
+                    console.log('Download complete. Extracting...');
+                    if (IS_WIN) {
+                        new AdmZip(zipPath).extractAllTo(INSTALL_DIR, true);
+                    } else {
+                        await new Promise((ok, fail) => {
+                            const tar = spawn('tar', ['-xzf', zipPath, '-C', INSTALL_DIR]);
+                            tar.on('error', fail);
+                            tar.on('close', code => code === 0 ? ok() : fail(new Error(`tar exited with code ${code}`)));
+                        });
+                    }
+                    fs.unlinkSync(zipPath); // Cleanup
+                    this.ready = true;
+                    console.log('SteamCMD ready.');
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
             });
             writer.on('error', reject);
         });
@@ -66,6 +81,7 @@ rcon_password "${rconPassword}"
     async install(appId, installPath, onLog, beta = null) {
         if (!this.ready) await this.init();
 
+        if (!/^\d{1,12}$/.test(String(appId))) throw new Error('Invalid app ID');
         return new Promise((resolve, reject) => {
             const args = [
                 '+force_install_dir', installPath,
@@ -84,6 +100,8 @@ rcon_password "${rconPassword}"
             const process = spawn(EXECUTABLE, args);
 
             let isFinished = false;
+            // Without this, a missing SteamCMD crashes the whole panel instead of failing the install.
+            process.on('error', err => reject(new Error(`SteamCMD could not start: ${err.message}`)));
 
             process.stdout.on('data', (data) => {
                 const msg = data.toString();
@@ -121,6 +139,25 @@ rcon_password "${rconPassword}"
                 }
             });
         });
+    }
+
+    // Download one Workshop item and copy it to <server>/garrysmod/addons/<id>.
+    // server.js called this but it was never written, so every Workshop install failed.
+    async downloadWorkshopAddon(workshopId, serverPath, appId = 4000) {
+        if (!/^\d{1,12}$/.test(String(workshopId)) || !/^\d{1,12}$/.test(String(appId))) throw new Error('Invalid Workshop ID');
+        if (!this.ready) await this.init();
+        await new Promise((resolve, reject) => {
+            const child = spawn(EXECUTABLE, ['+login', 'anonymous', '+workshop_download_item', String(appId), String(workshopId), '+quit']);
+            let out = '';
+            child.stdout.on('data', d => { out += d.toString(); });
+            child.on('error', err => reject(new Error(`SteamCMD could not start: ${err.message}`)));
+            child.on('close', code => (/Success\. Downloaded item/.test(out) || code === 0) ? resolve() : reject(new Error(`Workshop download failed (code ${code})`)));
+        });
+        const source = path.join(INSTALL_DIR, 'steamapps', 'workshop', 'content', String(appId), String(workshopId));
+        if (!await fs.pathExists(source)) throw new Error('Workshop item downloaded but no files were found');
+        const target = path.join(serverPath, 'garrysmod', 'addons', String(workshopId));
+        await fs.ensureDir(path.dirname(target));
+        await fs.copy(source, target, { overwrite: true });
     }
 }
 

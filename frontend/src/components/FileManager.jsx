@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Folder, File, ChevronRight, Save, X, FileText, Code } from 'lucide-react';
 
-function FileManager({ serverId }) {
+function FileManager({ serverId, canEdit = true }) {
     const [currentPath, setCurrentPath] = useState('');
     const [files, setFiles] = useState([]);
     const [selectedFile, setSelectedFile] = useState(null);
@@ -44,7 +44,7 @@ function FileManager({ serverId }) {
         setSelectedFile(fullPath);
         setLoading(true);
         try {
-            const res = await axios.get(`/api/server/${serverId}/files/content`, {
+            const res = await axios.get(`/api/server/${serverId}/files`, {
                 params: { path: fullPath }
             });
             setFileContent(res.data.content);
@@ -60,12 +60,13 @@ function FileManager({ serverId }) {
         if (!selectedFile) return;
         setSaving(true);
         try {
-            await axios.post(`/api/server/${serverId}/files/save`, {
+            // Endpoint fixed: the backend route is /file (it was /files/save, which didn't exist).
+            await axios.post(`/api/server/${serverId}/file`, {
                 path: selectedFile,
                 content: fileContent
             });
-        } catch {
-            alert('Failed to save file');
+        } catch (err) {
+            alert('Failed to save file: ' + (err.response?.data?.error || err.message));
         } finally {
             setSaving(false);
         }
@@ -98,7 +99,7 @@ function FileManager({ serverId }) {
     const breadcrumbs = currentPath ? currentPath.split('/') : [];
 
     return (
-        <div className="h-[600px] flex gap-4">
+        <div className="h-[calc(100vh-380px)] min-h-[480px] flex gap-4">
             {/* File Browser */}
             <div className="w-1/3 bg-gray-900/50 rounded-xl border border-gray-700/30 flex flex-col">
                 {/* Breadcrumb */}
@@ -176,14 +177,14 @@ function FileManager({ serverId }) {
                                 <span>{selectedFile.split('/').pop()}</span>
                             </span>
                             <div className="flex items-center space-x-2">
-                                <button
+                                {canEdit && <button
                                     onClick={saveFile}
                                     disabled={saving}
                                     className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm"
                                 >
                                     <Save size={16} />
                                     <span>{saving ? 'Saving...' : 'Save'}</span>
-                                </button>
+                                </button>}
                                 <button
                                     onClick={() => setSelectedFile(null)}
                                     className="text-gray-400 hover:text-white p-2"
@@ -195,6 +196,7 @@ function FileManager({ serverId }) {
                         <textarea
                             value={fileContent}
                             onChange={(e) => setFileContent(e.target.value)}
+                            readOnly={!canEdit}
                             className="flex-1 bg-gray-950 text-gray-100 p-4 font-mono text-sm resize-none focus:outline-none"
                             spellCheck={false}
                         />

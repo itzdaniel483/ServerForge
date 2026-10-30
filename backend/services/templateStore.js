@@ -1,7 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 
-const TEMPLATES_FILE = path.join(__dirname, '..', 'data', 'templates.json');
+const TEMPLATES_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'templates.json');
 
 // Default templates for each game
 const DEFAULT_TEMPLATES = {

@@ -39,3 +39,9 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Downloaded / generated at runtime (claude, 2026-10-30): never commit these
+backend/steamcmd/
+backend/backups/
+frontend/.vite/
+frontend/lint_output*.txt

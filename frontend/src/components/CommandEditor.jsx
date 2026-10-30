@@ -127,7 +127,7 @@ function CommandEditor({ serverId, serverData }) {
                         className="w-full bg-gray-950 text-white px-4 py-2 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none font-mono text-sm"
                         placeholder="C:\Games\Server\srcds.exe"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Full path to the server executable</p>
+                    <p className="text-xs text-gray-500 mt-1">A file inside the server folder</p>
                 </div>
 
                 {/* Server Port */}

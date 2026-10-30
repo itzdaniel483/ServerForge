@@ -55,8 +55,8 @@ Built for speed, security, and ease of use.
         ```
 5.  **Access the Panel:**
     *   Open your browser to: **`http://localhost:3000`**
-    *   **Default Username:** `admin`
-    *   **Default Password:** `admin`
+    *   **Username:** `admin`
+    *   **Password:** set `ADMIN_PASSWORD` before the first start, or read the random one from `backend/data/initial-admin-password`. Change it in Settings → Account.
 
 > [!TIP]
 > If you see an "Execution Policy" error, ensure you are running PowerShell as **Administrator**.
@@ -86,8 +86,8 @@ Docker deployment provides easy multi-instance support and simplified deployment
     docker-compose up -d
     ```
 2.  **Access the panel:** Open `http://localhost:3000`
-    *   Default User: `admin`
-    *   Default Pass: `admin`
+    *   User: `admin`
+    *   Password: `ADMIN_PASSWORD`, or the random one in `data/initial-admin-password`
 
 **For detailed Docker deployment instructions**, including:
 - Dokploy deployment

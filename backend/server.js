@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const cors = require('cors');
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
@@ -13,21 +12,29 @@ const pluginService = require('./services/pluginService');
 
 const userStore = require('./services/userStore');
 const settingsStore = require('./services/settingsStore');
-const { authMiddleware, JWT_SECRET } = require('./middleware/auth');
+const { authMiddleware, socketAuth, JWT_SECRET, validTeamDomain } = require('./middleware/auth');
+const { safeJoin, isInside, isNumericId, isBackupName, SERVERS_ROOT, requireAdmin, loginBlocked, loginFailed, loginSucceeded } = require('./middleware/guard');
+const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
+// Same-origin only: the panel serves its own frontend, so no cross-site API or socket access.
 const io = new Server(server, {
-    cors: {
-        origin: process.env.APP_URL || "*",
-        methods: ["GET", "POST"]
-    }
+    cors: process.env.APP_URL ? { origin: process.env.APP_URL, methods: ["GET", "POST"] } : undefined
 });
+io.use(socketAuth);
 
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    next();
+});
+app.use(express.json({ limit: '6mb' }));
+fs.ensureDirSync(SERVERS_ROOT);
 
 // Kill all orphaned srcds.exe processes on startup (Windows only)
 function cleanupOrphanedProcesses() {
@@ -55,8 +62,8 @@ function cleanupOrphanedProcesses() {
 
 cleanupOrphanedProcesses();
 
-// Initialize
-steamcmd.init();
+// SteamCMD downloads on first install (steamcmd.install calls init), not at every start.
+// An unhandled failure here used to crash the panel when offline.
 
 // Load server data from disk before any operations
 (async () => {
@@ -97,12 +104,17 @@ app.use('/api', authMiddleware);
 
 // Auth Routes
 app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
+    const ip = req.socket.remoteAddress;
+    if (loginBlocked(ip)) return res.status(429).json({ error: 'Too many tries. Wait 15 minutes.' });
+    if (typeof username !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Username and password required' });
     try {
         const user = await userStore.authenticate(username, password);
         if (!user) {
+            loginFailed(ip);
             return res.status(401).json({ error: 'Invalid credentials' });
         }
+        loginSucceeded(ip);
 
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role },
@@ -117,7 +129,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Debug endpoint to check Cloudflare headers (public route)
-app.get('/api/debug/headers', (req, res) => {
+app.get('/api/debug/headers', requireAdmin, (req, res) => {
     res.json({
         cfJwt: req.headers['cf-access-jwt-assertion'] ? 'Present' : 'Missing',
         cfJwtLength: req.headers['cf-access-jwt-assertion']?.length || 0,
@@ -172,8 +184,8 @@ app.post('/api/users/change-password', async (req, res) => {
             return res.status(400).json({ error: 'Current password and new password are required' });
         }
 
-        if (newPassword.length < 4) {
-            return res.status(400).json({ error: 'New password must be at least 4 characters' });
+        if (typeof newPassword !== 'string' || newPassword.length < 8) {
+            return res.status(400).json({ error: 'New password must be at least 8 characters' });
         }
 
         await userStore.changePassword(req.user.id, currentPassword, newPassword);
@@ -183,27 +195,43 @@ app.post('/api/users/change-password', async (req, res) => {
     }
 });
 
-// Settings endpoints
-app.get('/api/settings', async (req, res) => {
+// Settings endpoints. Only the auth mode is public (the login page needs it); the rest is admin-only.
+const SETTING_KEYS = ['steamApiKey', 'authMode', 'cfAccessTeamDomain', 'cfAccessAud'];
+const publicSettings = s => ({ ...s, steamApiKey: '', steamApiKeySet: !!s.steamApiKey });
+
+app.get('/api/auth-mode', async (req, res) => {
+    const settings = await settingsStore.getSettings();
+    res.json({ authMode: settings.authMode === 'external' ? 'external' : 'local' });
+});
+
+app.get('/api/settings', requireAdmin, async (req, res) => {
     try {
-        const settings = await settingsStore.getSettings();
-        res.json(settings);
+        res.json(publicSettings(await settingsStore.getSettings()));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/settings', async (req, res) => {
+app.post('/api/settings', requireAdmin, async (req, res) => {
     try {
-        const settings = await settingsStore.updateSettings(req.body);
-        res.json(settings);
+        const update = {};
+        for (const k of SETTING_KEYS) if (typeof req.body?.[k] === 'string') update[k] = req.body[k].trim();
+        if (update.steamApiKey === '') delete update.steamApiKey;   // blank field = keep the saved key
+        if ('authMode' in update && !['local', 'external'].includes(update.authMode)) return res.status(400).json({ error: 'Auth mode must be local or external' });
+        const next = { ...(await settingsStore.getSettings()), ...update };
+        if (next.authMode === 'external' && (!validTeamDomain(next.cfAccessTeamDomain) || !next.cfAccessAud)) {
+            return res.status(400).json({ error: 'Set a team domain like https://<team>.cloudflareaccess.com and the AUD tag first' });
+        }
+        res.json(publicSettings(await settingsStore.updateSettings(update)));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/api/servers', (req, res) => {
-    res.json(serverStore.getAll());
+    // RCON passwords are for admins only.
+    const all = serverStore.getAll();
+    res.json(req.user?.role === 'admin' ? all : all.map(({ rconPassword, ...s }) => s));
 });
 
 const GAME_DEFAULTS = {
@@ -215,10 +243,18 @@ const GAME_DEFAULTS = {
     '1007': { executable: 'srcds.exe', args: ['-console', '-game', 'hl2mp', '+map', 'dm_lockdown'] }
 };
 
-app.post('/api/install', async (req, res) => {
-    const { appId, gameName, installPath, templateName = 'Default', hostname, port, useCache } = req.body;
+app.post('/api/install', requireAdmin, async (req, res) => {
+    const { appId, gameName, templateName = 'Default', hostname, useCache } = req.body || {};
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Pick a game' });
+    if (typeof gameName !== 'string' || !gameName.trim()) return res.status(400).json({ error: 'Game name required' });
+    const port = req.body.port == null || req.body.port === '' ? null : Number(req.body.port);
+    if (port !== null && !(Number.isInteger(port) && port >= 1024 && port <= 65535)) return res.status(400).json({ error: 'Port must be 1024-65535' });
 
     try {
+        // Every server goes in its own folder under SERVERS_ROOT; the client only names the folder.
+        const folder = String(req.body.installPath || hostname || gameName).split(/[\\/]/).pop().replace(/[^\w .-]/g, '').trim() || `server-${Date.now()}`;
+        const installPath = safeJoin(SERVERS_ROOT, folder);
+        if (installPath === SERVERS_ROOT) return res.status(400).json({ error: 'Choose a folder name' });
         console.log(`Installing ${gameName} (${appId}) to ${installPath} using template "${templateName}"...`);
 
         if (useCache) {
@@ -245,11 +281,16 @@ app.post('/api/install', async (req, res) => {
 
         // Get template configuration
         const template = templateStore.getTemplate(appId, templateName);
-        const defaults = template || GAME_DEFAULTS[appId] || { executable: 'srcds.exe', args: ['-console'] };
+        const defaults = { ...(template || GAME_DEFAULTS[appId] || { executable: 'srcds.exe', args: ['-console'] }) };
+        // Templates name the Windows program; Linux SteamCMD installs the srcds_run launchers instead.
+        if (process.platform !== 'win32' && /^srcds(_win64)?\.exe$/.test(defaults.executable)) {
+            defaults.executable = defaults.executable === 'srcds_win64.exe' ? 'srcds_run_x64' : 'srcds_run';
+        }
 
         // Prepare args with custom port
         let args = [...defaults.args];
         const serverPort = port || defaults.port || 27015;
+        if (port && !args.includes('+port')) args.push('+port', String(port));
 
         // Extract game directory from args (usually follows -game)
         const gameDirIndex = args.indexOf('-game');
@@ -271,7 +312,7 @@ app.post('/api/install', async (req, res) => {
         };
 
         // Add to store
-        serverStore.add(newServer);
+        await serverStore.add(newServer);
 
         await steamcmd.createServerConfig(
             installPath,
@@ -283,7 +324,7 @@ app.post('/api/install', async (req, res) => {
         res.json({ success: true, server: newServer });
     } catch (err) {
         console.error('Installation failed:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
 
@@ -309,9 +350,10 @@ app.post('/api/server/start', async (req, res) => {
         }
 
         // Construct full executable path
-        const execPath = path.isAbsolute(srv.executable)
-            ? srv.executable
-            : path.join(srv.path, srv.executable);
+        // The program must live inside the server's own folder.
+        const execPath = path.resolve(srv.path, srv.executable);
+        if (!isInside(srv.path, execPath)) return res.status(400).json({ error: 'Executable must be inside the server folder' });
+        if (!await fs.pathExists(execPath)) return res.status(400).json({ error: `Executable not found: ${srv.executable}` });
         const args = srv.args || [];
         const cwd = srv.path;  // Use server install directory as working directory
 
@@ -324,7 +366,8 @@ app.post('/api/server/start', async (req, res) => {
 });
 
 app.post('/api/server/stop', async (req, res) => {
-    const { id } = req.body;
+    const { id } = req.body || {};
+    if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
 
     try {
         processManager.stop(id);
@@ -335,7 +378,7 @@ app.post('/api/server/stop', async (req, res) => {
     }
 });
 
-app.post('/api/server/:id/update', async (req, res) => {
+app.post('/api/server/:id/update', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const srv = serverStore.get(id);
 
@@ -371,8 +414,9 @@ app.post('/api/server/:id/update', async (req, res) => {
     }
 });
 
-app.delete('/api/server/:id', async (req, res) => {
+app.delete('/api/server/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
+    if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
 
     try {
         processManager.stop(id);
@@ -395,7 +439,7 @@ app.get('/api/server/:id/logs', (req, res) => {
     res.send(logs);
 });
 
-app.post('/api/restart-backend', (req, res) => {
+app.post('/api/restart-backend', requireAdmin, (req, res) => {
     res.json({ success: true, message: 'Backend restarting...' });
     setTimeout(() => {
         console.log('Backend restart requested via API');
@@ -412,11 +456,7 @@ app.get('/api/server/:id/files', async (req, res) => {
     if (!srv) return res.status(404).json({ error: 'Server not found' });
 
     try {
-        const fullPath = path.join(srv.path, relativePath);
-
-        if (!fullPath.startsWith(srv.path)) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
+        const fullPath = safeJoin(srv.path, relativePath);
 
         const stats = await fs.stat(fullPath);
 
@@ -445,24 +485,22 @@ app.get('/api/server/:id/files', async (req, res) => {
             res.json({ content, size: stats.size });
         }
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.status || (err.code === 'ENOENT' ? 404 : 500)).json({ error: err.code === 'ENOENT' ? 'Not found' : err.message });
     }
 });
 
-app.post('/api/server/:id/file', async (req, res) => {
+app.post('/api/server/:id/file', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { path: relativePath, content } = req.body;
+    const { path: relativePath, content } = req.body || {};
     const srv = serverStore.get(id);
 
     if (!srv) return res.status(404).json({ error: 'Server not found' });
     if (!relativePath) return res.status(400).json({ error: 'Path required' });
+    if (typeof content !== 'string') return res.status(400).json({ error: 'Content required' });
 
     try {
-        const fullPath = path.join(srv.path, relativePath);
-
-        if (!fullPath.startsWith(srv.path)) {
-            return res.status(403).json({ error: 'Access denied' });
-        }
+        const fullPath = safeJoin(srv.path, relativePath);
+        if (fullPath === path.resolve(srv.path)) return res.status(400).json({ error: 'Pick a file' });
 
         if (await fs.pathExists(fullPath)) {
             await fs.copy(fullPath, `${fullPath}.bak`);
@@ -471,13 +509,21 @@ app.post('/api/server/:id/file', async (req, res) => {
         await fs.writeFile(fullPath, content, 'utf8');
         res.json({ success: true, message: 'File saved (backup created)' });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
 
-app.put('/api/server/:id/config', async (req, res) => {
+app.put('/api/server/:id/config', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { executable, args } = req.body;
+    const { executable, args } = req.body || {};
+    const srv = serverStore.get(id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    if (executable !== undefined && (typeof executable !== 'string' || !executable || !isInside(srv.path, path.resolve(srv.path, executable)))) {
+        return res.status(400).json({ error: 'Executable must be a file inside the server folder' });
+    }
+    if (args !== undefined && !(Array.isArray(args) && args.every(a => typeof a === 'string'))) {
+        return res.status(400).json({ error: 'Arguments must be a list of text values' });
+    }
 
     try {
         await serverStore.updateServerConfig(id, { executable, args });
@@ -487,9 +533,10 @@ app.put('/api/server/:id/config', async (req, res) => {
     }
 });
 
-app.post('/api/server/:id/schedule', async (req, res) => {
+app.post('/api/server/:id/schedule', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { schedule } = req.body; // cron expression or null
+    const { schedule } = req.body || {}; // cron expression or null
+    if (schedule && (typeof schedule !== 'string' || !cron.validate(schedule))) return res.status(400).json({ error: 'That schedule is not a valid cron expression' });
 
     try {
         const srv = serverStore.get(id);
@@ -528,7 +575,7 @@ app.post('/api/server/:id/command', async (req, res) => {
         const Rcon = require('rcon-srcds').default;
 
         // Extract port from server args
-        let port = 27015; // default
+        let port = Number(srv.port) || 27015;
         const portIndex = srv.args.indexOf('+port');
         if (portIndex !== -1 && srv.args[portIndex + 1]) {
             port = parseInt(srv.args[portIndex + 1]);
@@ -570,7 +617,7 @@ app.get('/api/templates/:gameId', (req, res) => {
     res.json(templates);
 });
 
-app.post('/api/templates/:gameId/:templateName', async (req, res) => {
+app.post('/api/templates/:gameId/:templateName', requireAdmin, async (req, res) => {
     const { gameId, templateName } = req.params;
     const config = req.body;
 
@@ -582,7 +629,7 @@ app.post('/api/templates/:gameId/:templateName', async (req, res) => {
     }
 });
 
-app.delete('/api/templates/:gameId/:templateName', async (req, res) => {
+app.delete('/api/templates/:gameId/:templateName', requireAdmin, async (req, res) => {
     const { gameId, templateName } = req.params;
 
     try {
@@ -602,6 +649,7 @@ const backupService = require('./services/backupService');
 
 app.get('/api/server/:id/backups', async (req, res) => {
     const { id } = req.params;
+    if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
     try {
         const backups = await backupService.listBackups(id);
         res.json(backups);
@@ -623,9 +671,10 @@ app.post('/api/server/:id/backups', async (req, res) => {
     }
 });
 
-app.post('/api/server/:id/backups/restore', async (req, res) => {
+app.post('/api/server/:id/backups/restore', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { filename } = req.body;
+    const { filename } = req.body || {};
+    if (!isBackupName(filename)) return res.status(400).json({ error: 'Unknown backup' });
     const srv = serverStore.get(id);
     if (!srv) return res.status(404).json({ error: 'Server not found' });
 
@@ -643,8 +692,10 @@ app.post('/api/server/:id/backups/restore', async (req, res) => {
     }
 });
 
-app.delete('/api/server/:id/backups/:filename', async (req, res) => {
+app.delete('/api/server/:id/backups/:filename', requireAdmin, async (req, res) => {
     const { id, filename } = req.params;
+    if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
+    if (!isBackupName(filename)) return res.status(400).json({ error: 'Unknown backup' });
     try {
         await backupService.deleteBackup(id, filename);
         res.json({ success: true });
@@ -663,29 +714,10 @@ app.get('/api/server/:id/plugins', async (req, res) => {
     }
 });
 
-app.post('/api/server/:id/plugins/install', async (req, res) => {
+app.post('/api/server/:id/plugins/install', requireAdmin, async (req, res) => {
     try {
         const result = await pluginService.installPlugin(req.params.id, req.body.pluginId);
         res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Global Settings Routes
-app.get('/api/settings', async (req, res) => {
-    try {
-        const settings = settingsStore.getSettings();
-        res.json(settings);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/settings', async (req, res) => {
-    try {
-        const settings = await settingsStore.updateSettings(req.body);
-        res.json(settings);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -722,9 +754,10 @@ app.get('/api/server/:id/workshop/search', async (req, res) => {
     }
 });
 
-app.post('/api/server/:id/workshop', async (req, res) => {
+app.post('/api/server/:id/workshop', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { collectionId } = req.body;
+    const { collectionId } = req.body || {};
+    if (collectionId && !isNumericId(collectionId)) return res.status(400).json({ error: 'Collection ID must be a number' });
 
     try {
         await pluginService.updateWorkshop(id, collectionId);
@@ -735,9 +768,10 @@ app.post('/api/server/:id/workshop', async (req, res) => {
 });
 
 // Install a workshop addon
-app.post('/api/server/:id/workshop/install', async (req, res) => {
+app.post('/api/server/:id/workshop/install', requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { workshopId } = req.body;
+    const { workshopId } = req.body || {};
+    if (!isNumericId(workshopId)) return res.status(400).json({ error: 'Workshop ID must be a number' });
 
     try {
         const server = serverStore.get(id);
@@ -855,8 +889,9 @@ app.get('/api/server/:id/workshop/installed', async (req, res) => {
 });
 
 // Uninstall a workshop addon
-app.delete('/api/server/:id/workshop/installed/:addonId', async (req, res) => {
+app.delete('/api/server/:id/workshop/installed/:addonId', requireAdmin, async (req, res) => {
     const { id, addonId } = req.params;
+    if (!isNumericId(addonId)) return res.status(400).json({ error: 'Unknown addon' });
 
     try {
         const server = serverStore.get(id);
@@ -894,8 +929,9 @@ app.get('/api/cache/list', async (req, res) => {
 });
 
 // Download game to cache
-app.post('/api/cache/download/:appId', async (req, res) => {
+app.post('/api/cache/download/:appId', requireAdmin, async (req, res) => {
     const { appId } = req.params;
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
     const { gameName } = req.body;
 
     try {
@@ -913,6 +949,7 @@ app.post('/api/cache/download/:appId', async (req, res) => {
 // Check if game is cached
 app.get('/api/cache/status/:appId', async (req, res) => {
     const { appId } = req.params;
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
 
     try {
         const status = await cacheService.getCacheStatus(appId);
@@ -924,8 +961,9 @@ app.get('/api/cache/status/:appId', async (req, res) => {
 });
 
 // Delete cached game
-app.delete('/api/cache/:appId', async (req, res) => {
+app.delete('/api/cache/:appId', requireAdmin, async (req, res) => {
     const { appId } = req.params;
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
 
     try {
         const result = await cacheService.deleteCache(appId);
@@ -937,16 +975,17 @@ app.delete('/api/cache/:appId', async (req, res) => {
 });
 
 // Copy from cache (used during install)
-app.post('/api/cache/copy/:appId', async (req, res) => {
+app.post('/api/cache/copy/:appId', requireAdmin, async (req, res) => {
     const { appId } = req.params;
-    const { targetPath } = req.body;
+    const { targetPath } = req.body || {};
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
 
     try {
-        const result = await cacheService.copyFromCache(appId, targetPath);
+        const result = await cacheService.copyFromCache(appId, safeJoin(SERVERS_ROOT, targetPath));
         res.json(result);
     } catch (err) {
         console.error('Error copying from cache:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
 
@@ -999,7 +1038,8 @@ if (fs.existsSync(frontendPath)) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+const HOST = process.env.HOST || undefined;   // e.g. 127.0.0.1 or a LAN address; default = all interfaces
+server.listen(PORT, HOST, () => {
     console.log(`🚀 ServerForge running on port ${PORT}`);
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Access at: ${process.env.APP_URL || `http://localhost:${PORT}`}`);

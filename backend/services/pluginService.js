@@ -71,7 +71,7 @@ class PluginService {
             // 1. Get latest filename
             console.log(`[Plugin] Fetching latest version for ${pluginId}...`);
             const versionRes = await axios.get(pluginConfig.baseUrl + pluginConfig.latestFile);
-            filename = versionRes.data.trim();
+            filename = path.basename(String(versionRes.data).trim()); // remote text: keep it a plain file name
             downloadUrl = pluginConfig.baseUrl + filename;
         } else {
             // Direct download
