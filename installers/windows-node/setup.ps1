@@ -47,6 +47,90 @@ function Stop-ServerForge {
     }
 }
 
+# Pick and check a pairing file; stops setup with a plain reason if it's wrong, expired or the panel is unreachable.
+function Select-PairingFile($PairingFile) {
+Say '  On the panel: Nodes > Add node > Download file. Copy that file to this PC.'
+if (-not $PairingFile) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = 'Choose the ServerForge pairing file (serverforge-enrolment.json)'
+    $dlg.Filter = 'ServerForge pairing file (*.json)|*.json|All files (*.*)|*.*'
+    $dlg.InitialDirectory = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { Fail 'No pairing file chosen.' }
+    $PairingFile = $dlg.FileName
+}
+try { $bundle = Get-Content -Raw -Path $PairingFile | ConvertFrom-Json } catch { Fail "That file isn't a ServerForge pairing file ($PairingFile)." }
+foreach ($k in @('code', 'codeId', 'hubUrl', 'hubFingerprint', 'expiresAt')) { if (-not $bundle.$k) { Fail "That file isn't a ServerForge pairing file (missing $k)." } }
+if ($bundle.hubUrl -notmatch '^wss://([^/:]+):(\d+)/') { Fail "The pairing file has an unexpected panel address: $($bundle.hubUrl)" }
+$hubHost = $Matches[1]; $hubPort = [int]$Matches[2]
+$minutesLeft = [math]::Floor(($bundle.expiresAt - [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) / 60000)
+if ($minutesLeft -lt 1) { Fail 'This pairing file has expired (they last 10 minutes). On the panel make a new one: Nodes > Add node.' }
+Say "  Panel: $hubHost  (file valid for about $minutesLeft more minutes)"
+
+# The node dials out to the panel; nothing is opened on this PC. Check it can reach it.
+$reach = Test-NetConnection -ComputerName $hubHost -Port $hubPort -WarningAction SilentlyContinue
+if (-not $reach.TcpTestSucceeded) {
+    $myIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+    Fail "This PC can't reach the panel at ${hubHost}:$hubPort. Ask for this PC's IP ($myIp) to be allowed on the panel's firewall, then run Setup again."
+}
+Say "  Panel reachable from this PC." 'Green'
+return $PairingFile
+}
+
+# Pair with --until-approved, show the fingerprint large, wait for Approve on the panel.
+function Invoke-Pairing($PairingFile) {
+$out = Join-Path $env:TEMP "sf-pair-$PID.log"
+$env:NODE_DATA_DIR = Join-Path $DataDir 'node'
+$env:DATA_DIR = Join-Path $DataDir 'data'
+$env:NODE_LOCAL_API_URL = 'http://127.0.0.1:3230'
+$pair = Start-Process -FilePath $nodeExe -ArgumentList @("`"$(Join-Path $InstallDir 'app\backend\node-client.js')`"", 'pair', "`"$PairingFile`"", '--until-approved') `
+    -RedirectStandardOutput $out -RedirectStandardError "$out.err" -NoNewWindow -PassThru
+$fingerprint = $null
+for ($i = 0; $i -lt 60 -and -not $fingerprint -and -not $pair.HasExited; $i++) {
+    Start-Sleep -Milliseconds 500
+    $line = Get-Content $out -ErrorAction SilentlyContinue | Where-Object { $_ -match '^FINGERPRINT ' } | Select-Object -First 1
+    if ($line) { $fingerprint = $line.Substring(12).Trim() }
+}
+if (-not $fingerprint) {
+    $err = (Get-Content "$out.err", $out -ErrorAction SilentlyContinue) -join "`n"
+    Fail "Pairing didn't start. $err"
+}
+Write-Host ''
+Write-Host '  +---------------------------------------------------------------+' -ForegroundColor Yellow
+Write-Host '  |  NOW APPROVE THIS PC ON THE PANEL                             |' -ForegroundColor Yellow
+Write-Host '  |  Panel > Nodes > waiting card > check the fingerprint matches |' -ForegroundColor Yellow
+Write-Host '  |  > tick the box > Approve                                     |' -ForegroundColor Yellow
+Write-Host '  +---------------------------------------------------------------+' -ForegroundColor Yellow
+Write-Host ''
+Write-Host '  This PC''s fingerprint:' -ForegroundColor White
+$groups = $fingerprint -split ' '
+for ($i = 0; $i -lt $groups.Count; $i += 8) { Write-Host ('     ' + (($groups[$i..([math]::Min($i + 7, $groups.Count - 1))]) -join '  ')) -ForegroundColor Green }
+Write-Host ''
+Say '  Waiting for approval (the pairing file expires 10 minutes after it was made)...'
+$pair.WaitForExit()
+$pairLog = (Get-Content $out, "$out.err" -ErrorAction SilentlyContinue) -join "`n"
+Remove-Item $out, "$out.err" -Force -ErrorAction SilentlyContinue
+if ($pair.ExitCode -ne 0) { Fail "Not approved: $pairLog" }
+
+# The pairing file is single-use and now spent; don't leave it lying around.
+Remove-Item $PairingFile -Force -ErrorAction SilentlyContinue
+}
+
+# Restart the link and read its log until it connects or the panel refuses it (never approved / removed on the panel).
+function Wait-Link {
+    $logs = Join-Path $DataDir 'logs'
+    $before = @{}; Get-ChildItem $logs -Filter 'ServerForgeNode*.log' -ErrorAction SilentlyContinue | ForEach-Object { $before[$_.FullName] = $_.Length }
+    Restart-Service -Name $LinkService
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 500
+        $text = (Get-ChildItem $logs -Filter 'ServerForgeNode*.log' -ErrorAction SilentlyContinue | ForEach-Object {
+            $fs = [IO.File]::Open($_.FullName, 'Open', 'Read', 'ReadWrite'); try { $start = [long]$before[$_.FullName]; if ($start -gt $fs.Length) { $start = 0 }; $null = $fs.Seek($start, 'Begin'); (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() } }) -join "`n"
+        if ($text -match 'Node connected') { return 'connected' }
+        if ($text -match 'AUTH_FAILED|revoked|unknown|refused|Pair this node first|identity is invalid') { return 'refused' }
+    }
+    return 'unknown'
+}
+
 # --- Uninstall -------------------------------------------------------------------------------
 if ($Uninstall) {
     if (-not (Test-Admin)) { Fail 'Run Uninstall.cmd (it asks for administrator rights).' }
@@ -77,7 +161,10 @@ Say '=====================================================' 'DarkCyan'
 if (-not (Test-Admin)) { Fail 'This needs administrator rights. Double-click Setup.cmd instead of setup.ps1.' }
 $Total = 6
 $Identity = Join-Path $DataDir 'node\node-identity.json'
-$AlreadyPaired = (Test-Path $Identity) -and -not $Repair
+# Paired = the saved identity was approved (it has a nodeId). An attempt that was never approved leaves an identity
+# without one (Daniel 3511: Setup said "already paired" but the panel had no such PC); that is discarded below.
+function Test-Approved { try { return [bool]((Get-Content -Raw $Identity | ConvertFrom-Json).nodeId) } catch { return $false } }
+$AlreadyPaired = (Test-Path $Identity) -and (Test-Approved) -and -not $Repair
 
 # 1. Checks
 Step 1 $Total 'Checking this PC'
@@ -101,33 +188,10 @@ Start-Transcript -Path (Join-Path $DataDir 'setup.log') -Append | Out-Null
 # 2. Pairing file (asked early so a wrong or expired file stops setup before anything is installed)
 Step 2 $Total 'Pairing file'
 if ($AlreadyPaired) {
-    Say '  This PC is already paired; keeping it (updating the app only). Use -Repair to pair again.' 'Green'
+    Say '  This PC is already paired; keeping it. If the panel doesn't recognise it any more, Setup offers to pair again at the end.' 'Green'
 } else {
-Say '  On the panel: Nodes > Add node > Download file. Copy that file to this PC.'
-if (-not $PairingFile) {
-    Add-Type -AssemblyName System.Windows.Forms
-    $dlg = New-Object System.Windows.Forms.OpenFileDialog
-    $dlg.Title = 'Choose the ServerForge pairing file (serverforge-enrolment.json)'
-    $dlg.Filter = 'ServerForge pairing file (*.json)|*.json|All files (*.*)|*.*'
-    $dlg.InitialDirectory = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
-    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { Fail 'No pairing file chosen.' }
-    $PairingFile = $dlg.FileName
-}
-try { $bundle = Get-Content -Raw -Path $PairingFile | ConvertFrom-Json } catch { Fail "That file isn't a ServerForge pairing file ($PairingFile)." }
-foreach ($k in @('code', 'codeId', 'hubUrl', 'hubFingerprint', 'expiresAt')) { if (-not $bundle.$k) { Fail "That file isn't a ServerForge pairing file (missing $k)." } }
-if ($bundle.hubUrl -notmatch '^wss://([^/:]+):(\d+)/') { Fail "The pairing file has an unexpected panel address: $($bundle.hubUrl)" }
-$hubHost = $Matches[1]; $hubPort = [int]$Matches[2]
-$minutesLeft = [math]::Floor(($bundle.expiresAt - [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) / 60000)
-if ($minutesLeft -lt 1) { Fail 'This pairing file has expired (they last 10 minutes). On the panel make a new one: Nodes > Add node.' }
-Say "  Panel: $hubHost  (file valid for about $minutesLeft more minutes)"
-
-# The node dials out to the panel; nothing is opened on this PC. Check it can reach it.
-$reach = Test-NetConnection -ComputerName $hubHost -Port $hubPort -WarningAction SilentlyContinue
-if (-not $reach.TcpTestSucceeded) {
-    $myIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
-    Fail "This PC can't reach the panel at ${hubHost}:$hubPort. Ask for this PC's IP ($myIp) to be allowed on the panel's firewall, then run Setup again."
-}
-Say "  Panel reachable from this PC." 'Green'
+if (Test-Path $Identity) { Remove-Item $Identity -Force; Say '  Removed an unfinished pairing from an earlier attempt.' }
+$PairingFile = Select-PairingFile $PairingFile
 }
 
 # 3. Files
@@ -169,49 +233,20 @@ Say '  Firewall: game ports 2000-30000 allowed from your local network only.'
 
 # 6. Pair, then wait for the admin to approve on the panel
 Step 6 $Total 'Pairing with the panel'
-if ($AlreadyPaired) {
-    Restart-Service -Name $LinkService
-    Say '  Link restarted with the saved identity.' 'Green'
-} else {
-$out = Join-Path $env:TEMP "sf-pair-$PID.log"
-$env:NODE_DATA_DIR = Join-Path $DataDir 'node'
-$env:DATA_DIR = Join-Path $DataDir 'data'
-$env:NODE_LOCAL_API_URL = 'http://127.0.0.1:3230'
-$pair = Start-Process -FilePath $nodeExe -ArgumentList @("`"$(Join-Path $InstallDir 'app\backend\node-client.js')`"", 'pair', "`"$PairingFile`"", '--until-approved') `
-    -RedirectStandardOutput $out -RedirectStandardError "$out.err" -NoNewWindow -PassThru
-$fingerprint = $null
-for ($i = 0; $i -lt 60 -and -not $fingerprint -and -not $pair.HasExited; $i++) {
-    Start-Sleep -Milliseconds 500
-    $line = Get-Content $out -ErrorAction SilentlyContinue | Where-Object { $_ -match '^FINGERPRINT ' } | Select-Object -First 1
-    if ($line) { $fingerprint = $line.Substring(12).Trim() }
+if (-not $AlreadyPaired) { Invoke-Pairing $PairingFile }
+$link = Wait-Link
+if ($link -ne 'connected' -and $AlreadyPaired) {
+    # Paired before, but the panel doesn't accept it any more (removed on the Nodes page, or panel reset).
+    Say '  The panel no longer recognises this PC (it may have been removed on the Nodes page).' 'Yellow'
+    $answer = Read-Host '  Pair it again now? You need a new pairing file from Nodes > Add node. [Y/n]'
+    if ($answer -match '^(n|no)$') { Fail 'Not paired. Run Setup again when you have a pairing file.' }
+    Stop-Service -Name $LinkService -Force -ErrorAction SilentlyContinue
+    Remove-Item $Identity -Force -ErrorAction SilentlyContinue
+    Invoke-Pairing (Select-PairingFile $null)
+    $link = Wait-Link
 }
-if (-not $fingerprint) {
-    $err = (Get-Content "$out.err", $out -ErrorAction SilentlyContinue) -join "`n"
-    Fail "Pairing didn't start. $err"
-}
-Write-Host ''
-Write-Host '  +---------------------------------------------------------------+' -ForegroundColor Yellow
-Write-Host '  |  NOW APPROVE THIS PC ON THE PANEL                             |' -ForegroundColor Yellow
-Write-Host '  |  Panel > Nodes > waiting card > check the fingerprint matches |' -ForegroundColor Yellow
-Write-Host '  |  > tick the box > Approve                                     |' -ForegroundColor Yellow
-Write-Host '  +---------------------------------------------------------------+' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '  This PC''s fingerprint:' -ForegroundColor White
-$groups = $fingerprint -split ' '
-for ($i = 0; $i -lt $groups.Count; $i += 8) { Write-Host ('     ' + (($groups[$i..([math]::Min($i + 7, $groups.Count - 1))]) -join '  ')) -ForegroundColor Green }
-Write-Host ''
-Say '  Waiting for approval (the pairing file expires 10 minutes after it was made)...'
-$pair.WaitForExit()
-$pairLog = (Get-Content $out, "$out.err" -ErrorAction SilentlyContinue) -join "`n"
-Remove-Item $out, "$out.err" -Force -ErrorAction SilentlyContinue
-if ($pair.ExitCode -ne 0) { Fail "Not approved: $pairLog" }
-
-# The pairing file is single-use and now spent; don't leave it lying around.
-Remove-Item $PairingFile -Force -ErrorAction SilentlyContinue
-Restart-Service -Name $LinkService
-}
-Start-Sleep -Seconds 5
-if ((Get-Service -Name $LinkService).Status -ne 'Running') { Fail "The link service didn't stay running. See $DataDir\logs\ServerForgeNode.*.log" }
+if ($link -ne 'connected') { Fail "This PC didn't connect to the panel. See $DataDir\logs\ServerForgeNode.*.log" }
+Say '  Connected to the panel.' 'Green'
 
 Write-Host ''
 Say '=====================================================' 'DarkGreen'
