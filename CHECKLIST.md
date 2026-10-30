@@ -48,11 +48,11 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - Browser walkthrough: desktop 1440, phone 390, admin and normal user
 
 ## UI v2 (2026-10-30, Daniel: "too basic and the colour scheme")
-- [x] Runtime themes: Nebula (default), Aurora, Steel, Ember; picker in the top bar, remembered per browser
+- [x] Runtime themes: Steel (default), Nebula, Aurora, Ember; picker in the top bar, remembered per browser
 - [x] Frosted top bar with pill nav and live host CPU/RAM/disk (codex /api/host)
 - [x] Servers dashboard: stat tiles, filter + search, game-art cards with players bar
 - [x] Server page: art hero, live meters, pill tabs, themed console
 - [x] Installer: game-art grid, art header on the form, SteamCMD progress bar
 - [x] Login: gradient hero
-- [ ] Daniel picks a default palette
+- [x] Daniel picked Steel as default (2026-10-30)
 - [ ] Restyle the inner tools (Files, Backups, Schedule, Settings tables) to the v2 kit

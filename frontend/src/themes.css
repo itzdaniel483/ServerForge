@@ -1,5 +1,5 @@
 /* Generated palettes (claude, UI v2). gray=--g-*, accent=--a-*, second accent=--b-*. */
-:root, [data-theme="nebula"] {
+[data-theme="nebula"] {
   --g-50: 245 246 255;
   --g-100: 236 238 254;
   --g-200: 217 220 245;
@@ -53,7 +53,7 @@
   --b-400: 56 189 248;
   --b-500: 14 165 233;
 }
-[data-theme="steel"] {
+:root, [data-theme="steel"] {
   --g-50: 248 250 252;
   --g-100: 241 245 249;
   --g-200: 226 232 240;

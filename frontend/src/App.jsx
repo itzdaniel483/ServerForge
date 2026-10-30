@@ -185,7 +185,7 @@ function ThemePicker() {
                 <div className="absolute right-0 mt-2 w-56 p-2 glass rounded-2xl z-40" role="menu">
                     {THEMES.map(t => (
                         <button key={t.id} role="menuitemradio" aria-checked={current === t.id}
-                            onClick={() => { applyTheme(t.id); setCurrent(t.id); setOpen(false); }}
+                            onClick={() => { applyTheme(t.id, true); setCurrent(t.id); setOpen(false); }}
                             className={`w-full flex items-center gap-3 px-3 h-11 rounded-xl text-sm font-semibold ${current === t.id ? 'bg-white/[.08] text-white' : 'text-gray-300 hover:bg-white/[.05]'}`}>
                             <span className="w-7 h-7 rounded-lg ring-1 ring-white/20" style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }} />
                             {t.label}
