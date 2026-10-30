@@ -20,7 +20,7 @@ test('two real panels federate list, ACLs, files, power/streams, tasks, backups,
     async function panel(name, tls = false) {
         const dir = path.join(root, name);
         for (const sub of ['data', 'servers', 'backups', 'cache', 'steamcmd']) fs.mkdirSync(path.join(dir, sub), { recursive: true });
-        fs.writeFileSync(path.join(dir, 'steamcmd', 'steamcmd.sh'), '#!/bin/sh\ndest=""\nwhile [ "$#" -gt 0 ]; do\n if [ "$1" = "+force_install_dir" ]; then shift; dest="$1"; fi\n shift\ndone\nmkdir -p "$dest"\necho fixture > "$dest/steam-fixture.txt"\necho "progress: 50.0 (test fixture)"\necho "Success! App fully installed"\nexit 0\n', { mode: 0o755 });
+        fs.writeFileSync(path.join(dir, 'steamcmd', 'steamcmd.sh'), '#!/bin/sh\ndest=""\napp=""\nwhile [ "$#" -gt 0 ]; do\n if [ "$1" = "+force_install_dir" ]; then shift; dest="$1"; fi\n if [ "$1" = "+app_update" ]; then shift; app="$1"; fi\n shift\ndone\nmkdir -p "$dest"\necho fixture > "$dest/steam-fixture.txt"\necho "progress: 50.0 (test fixture)"\necho "Success! App \x27$app\x27 fully installed."\nexit 0\n', { mode: 0o755 });
         if (!tls) {
             const game = path.join(dir, 'servers', 'fixture'); fs.mkdirSync(game);
             fs.writeFileSync(path.join(game, 'run.sh'), '#!/bin/sh\nwhile true; do echo federation-tick; sleep 0.2; done\n', { mode: 0o755 });

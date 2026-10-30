@@ -19,7 +19,12 @@ test.before(async () => {
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const mode = process.argv[process.argv.indexOf('+force_install_dir') + 1];
-if (mode.endsWith('signal')) { process.kill(process.pid, 'SIGTERM'); }
+if (mode.endsWith('exit-zero')) { process.stdout.write('SteamCMD bootstrap complete'); process.exit(0); }
+else if (mode.endsWith('exit-seven')) { process.exit(7); }
+else if (mode.endsWith('wrong-app')) { process.stdout.write("Success! App '999' fully installed."); process.exit(0); }
+else if (mode.endsWith('retry-ok')) { if (process.argv.includes('validate')) process.stdout.write("Success! App '1' fully installed."); else { process.stdout.write('Update complete, launching...'); process.exit(7); } }
+else if (mode.endsWith('quoted')) { process.stdout.write("Success! App '1' fully installed."); }
+else if (mode.endsWith('signal')) { process.kill(process.pid, 'SIGTERM'); }
 else if (mode.endsWith('success')) {
  process.stdout.write('Success! App 1 fully installed.');
  setTimeout(() => { fs.writeFileSync(mode + '.closed', 'done'); process.exit(0); }, 100);
@@ -91,4 +96,15 @@ test('a successful but hung SteamCMD is closed before resolution', { skip: proce
     const pid = Number(await fs.readFile(installPath + '.pid', 'utf8'));
     assert.equal(await isRunning(pid), false);
     assert.equal(steamcmd.children.size, 0);
+});
+
+test('clean/bootstrap exits and another app completion never mark the requested app installed', { skip: process.platform === 'win32' }, async () => {
+    for (const mode of ['exit-zero', 'exit-seven', 'wrong-app']) {
+        const logs = [];
+        await assert.rejects(steamcmd.install('1', path.join(tmp, mode), m => logs.push(m)), { code: 'STEAM_INSTALL_INCOMPLETE' });
+        assert.ok(logs.some(m => /Retrying once/.test(m)), 'an incomplete run is retried once before failing');
+        assert.equal(steamcmd.children.size, 0);
+    }
+    await steamcmd.install('1', path.join(tmp, 'quoted'));
+    await steamcmd.install('1', path.join(tmp, 'retry-ok')); // first run only self-updates; the validate retry installs
 });

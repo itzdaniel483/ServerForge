@@ -86,7 +86,19 @@ rcon_password "${rconPassword}"
         console.log(`Created server config at ${cfgPath}`);
     }
 
+    // Daniel #gamemanager 3576 (Gmod on the Windows node said Installed with half its files): only the requested
+    // app's "fully installed / already up to date" line counts (codex), and an incomplete run (e.g. SteamCMD's first
+    // run on Windows only updating itself) is retried once with `validate` before failing (claude).
     async install(appId, installPath, onLog, beta = null, { signal } = {}) {
+        try { return await this.installOnce(appId, installPath, onLog, beta, { signal }); }
+        catch (err) {
+            if (err?.code !== 'STEAM_INSTALL_INCOMPLETE' || signal?.aborted) throw err;
+            onLog?.('\nSteamCMD stopped before the game finished installing. Retrying once and checking every file…\n');
+            return this.installOnce(appId, installPath, onLog, beta, { signal, validate: true });
+        }
+    }
+
+    async installOnce(appId, installPath, onLog, beta = null, { signal, validate = false } = {}) {
         const abortError = () => Object.assign(new Error('SteamCMD install cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
         if (signal?.aborted) throw abortError();
         if (!/^\d{1,12}$/.test(String(appId))) throw new Error('Invalid app ID');
@@ -106,6 +118,7 @@ rcon_password "${rconPassword}"
         return new Promise((resolve, reject) => {
             const args = ['+force_install_dir', installPath, '+login', 'anonymous', '+app_update', String(appId)];
             if (beta) args.push('-beta', beta);
+            if (validate) args.push('validate');
             args.push('+quit');
             const child = spawn(EXECUTABLE, args, { detached: !IS_WIN });
             this.children.add(child);
@@ -133,8 +146,8 @@ rcon_password "${rconPassword}"
                 this.children.delete(child);
                 if (aborted) reject(abortError());
                 else if (startError) reject(new Error(`SteamCMD could not start: ${startError.message}`));
-                else if (success || exitCode === 0 || exitCode === 7) resolve();
-                else reject(new Error(`SteamCMD exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`));
+                else if (success) resolve();
+                else reject(Object.assign(new Error(`SteamCMD install incomplete: app ${appId} did not report fully installed or already up to date (exit ${exitCode}${exitSignal ? ` ${exitSignal}` : ''}). Retry the install/update.`), { code: 'STEAM_INSTALL_INCOMPLETE' }));
             };
             const terminate = () => {
                 if (terminating) return;
@@ -153,7 +166,7 @@ rcon_password "${rconPassword}"
                 if (onLog && !success && !aborted) onLog(msg);
                 // SteamCMD may split a success line over stream chunks.
                 outputTail = (outputTail + msg).slice(-8192);
-                if (!success && !aborted && /Success! App[^\r\n]*(?:fully installed|already up to date)/.test(outputTail)) {
+                if (!success && !aborted && new RegExp(`Success! App ['"]?${appId}['"]? (?:fully installed|already up to date)\\.`).test(outputTail)) {
                     success = true;
                     // Allow normal cleanup, then stop a hung process without resolving before close.
                     successTimer = setTimeout(terminate, 2000);
