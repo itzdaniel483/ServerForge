@@ -51,14 +51,16 @@ export default function Installer({ onDone }) {
         setInstalling(true); setLogs([]); setResult(null);
         const socket = getSocket();
         const onLog = d => setLogs(l => [...l.slice(-800), stripAnsi(d)]);
-        socket.on('install-log', onLog);
+        // Remote installs stream on install-log-<nodeId>; local keeps install-log.
+        const event = nodeId === 'local' ? 'install-log' : `install-log-${nodeId}`;
+        socket.on(event, onLog);
         try {
             await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }) });
             setResult({ ok: true, text: `${vars.name} is installed.` });
         } catch (err) {
             setResult({ ok: false, text: errorText(err) });
         } finally {
-            socket.off('install-log', onLog);
+            socket.off(event, onLog);
             setInstalling(false);
         }
     }

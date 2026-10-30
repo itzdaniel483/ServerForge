@@ -92,14 +92,14 @@ export default function CacheManager() {
             )}
             {error && <Notice>{error}</Notice>}
             <div className="grid gap-3">
-                {shown.map(g => <CacheRow key={`${nodeId}-${g.appId}`} game={g} entry={cache[g.appId]} pending={pending[g.appId]} onDownload={download} onCancel={cancel} onDelete={remove} />)}
+                {shown.map(g => <CacheRow key={`${nodeId}-${g.appId}`} game={g} entry={cache[g.appId]} pending={pending[g.appId]} nodeId={nodeId} onDownload={download} onCancel={cancel} onDelete={remove} />)}
                 {games.length > 0 && shown.length === 0 && <div className="text-gray-400 py-6">No games match.</div>}
             </div>
         </div>
     );
 }
 
-function CacheRow({ game, entry, pending, onDownload, onCancel, onDelete }) {
+function CacheRow({ game, entry, pending, nodeId, onDownload, onCancel, onDelete }) {
     const status = entry?.status || 'not_cached';
     const busy = BUSY.includes(status);
     const [showLog, setShowLog] = useState(false);
@@ -110,9 +110,11 @@ function CacheRow({ game, entry, pending, onDownload, onCancel, onDelete }) {
         if (!showLog) return undefined;
         const socket = getSocket();
         const onLine = d => setLog(l => (l + stripAnsi(d)).slice(-20000));
-        socket.on(`cache-download-${game.appId}`, onLine);
-        return () => socket.off(`cache-download-${game.appId}`, onLine);
-    }, [showLog, game.appId]);
+        // Remote machines stream on cache-download-<nodeId>:<appId>; local keeps cache-download-<appId>.
+        const event = nodeId === 'local' ? `cache-download-${game.appId}` : `cache-download-${nodeId}:${game.appId}`;
+        socket.on(event, onLine);
+        return () => socket.off(event, onLine);
+    }, [showLog, game.appId, nodeId]);
 
     const label = {
         downloading: `Downloading ${Math.round(entry?.progress || 0)}%`,
