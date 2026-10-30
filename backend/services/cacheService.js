@@ -1,132 +1,121 @@
 const fs = require('fs-extra');
 const path = require('path');
-const { spawn } = require('child_process');
 const steamcmd = require('./steamcmd');
-const { writeJson } = require('./jsonFile');
-
-const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '../..', 'cache');
-const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
+const { readJson, writeJson } = require('./jsonFile');
+const failure = (message, status = 409) => Object.assign(new Error(message), { status });
 
 class CacheService {
-    constructor() {
+    constructor({ cacheDir = process.env.CACHE_DIR || path.join(__dirname, '../..', 'cache'), steam = steamcmd } = {}) {
+        this.dir = path.resolve(cacheDir);
+        this.file = path.join(this.dir, 'cache.json');
+        this.steam = steam;
         this.cache = {};
-        this.init();
+        this.jobs = new Map();
+        this.deleting = new Set();
+        this.ready = this.init();
     }
-
     async init() {
-        await fs.ensureDir(CACHE_DIR);
-        await this.loadCache();
-    }
-
-    async loadCache() {
-        try {
-            if (await fs.pathExists(CACHE_FILE)) {
-                const data = await fs.readFile(CACHE_FILE, 'utf8');
-                this.cache = JSON.parse(data);
+        await fs.ensureDir(this.dir);
+        const data = await readJson(this.file, {});
+        this.cache = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+        let changed = false;
+        for (const entry of Object.values(this.cache)) {
+            if (entry.status === 'downloading' || entry.status === 'cancelling') {
+                entry.status = 'interrupted';
+                entry.error = 'Download interrupted by panel restart. Retry to resume.';
+                changed = true;
             }
-        } catch (err) {
-            console.error('Failed to load cache.json:', err);
-            this.cache = {};
         }
+        if (changed) await this.saveCache();
     }
-
-    async saveCache() {
-        await writeJson(CACHE_FILE, this.cache);
+    async saveCache() { await writeJson(this.file, this.cache); }
+    checkId(appId) {
+        if (!/^\d{1,12}$/.test(String(appId))) throw failure('Invalid app ID', 400);
+        return String(appId);
     }
+    async listCached() { await this.ready; return Object.entries(this.cache).map(([appId, entry]) => ({ appId, ...entry })); }
+    async isCached(appId) { await this.ready; return this.cache[this.checkId(appId)]?.status === 'ready'; }
+    async getCachePath(appId) { return path.join(this.dir, this.checkId(appId)); }
+    async getCacheStatus(appId) { await this.ready; return this.cache[this.checkId(appId)] || { status: 'not_cached' }; }
 
-    async listCached() {
-        await this.loadCache();
-        return Object.keys(this.cache).map(appId => ({
-            appId,
-            ...this.cache[appId]
-        }));
+    async startDownload(appId, gameName, onProgress = () => {}) {
+        await this.ready;
+        appId = this.checkId(appId);
+        if (this.jobs.has(appId) || this.deleting.has(appId)) throw failure('Cache operation already in progress');
+        const controller = new AbortController();
+        const job = { controller, completion: null, lastSaved: 0, tail: '' };
+        job.completion = new Promise(resolve => { job.finish = resolve; });
+        this.jobs.set(appId, job); // Reserve before the first await.
+        this.cache[appId] = { name: String(gameName || appId).slice(0, 120), status: 'downloading', progress: 0,
+            downloadedDate: null, lastChecked: new Date().toISOString(), diskSize: null, logs: '' };
+        try { await this.saveCache(); }
+        catch (err) { this.jobs.delete(appId); delete this.cache[appId]; job.finish({ success: false }); throw err; }
+        this.runDownload(appId, job, onProgress).then(job.finish);
+        return { success: true, status: 'downloading', appId };
     }
-
-    async isCached(appId) {
-        await this.loadCache();
-        return this.cache[appId] && this.cache[appId].status === 'ready';
-    }
-
-    async getCachePath(appId) {
-        return path.join(CACHE_DIR, appId.toString());
-    }
-
-    async downloadToCache(appId, gameName, onProgress) {
-        const cachePath = await this.getCachePath(appId);
-
-        // Update cache status to downloading
-        this.cache[appId] = {
-            name: gameName,
-            status: 'downloading',
-            downloadedDate: null,
-            lastChecked: new Date().toISOString(),
-            diskSize: null
-        };
-        await this.saveCache();
-
+    async runDownload(appId, job, onProgress) {
+        const entry = this.cache[appId];
         try {
-            // Use SteamCMD to download the game to cache
-            await steamcmd.install(appId, cachePath, onProgress);
-
-            // Calculate disk size
-            const size = await this.getDiskSize(cachePath);
-
-            // Update cache status to ready
-            this.cache[appId] = {
-                name: gameName,
-                status: 'ready',
-                downloadedDate: new Date().toISOString(),
-                lastChecked: new Date().toISOString(),
-                diskSize: size
-            };
-            await this.saveCache();
-
-            return { success: true };
+            await this.steam.install(appId, await this.getCachePath(appId), chunk => {
+                const text = String(chunk);
+                entry.logs = Buffer.from(entry.logs + text).subarray(-15996).toString('utf8').split('\n').slice(-100).join('\n');
+                const combined = job.tail + text;
+                const matches = [...combined.matchAll(/progress:\s*(\d+(?:\.\d+)?)/g)];
+                job.tail = combined.slice(-512);
+                if (matches.length) entry.progress = Math.max(0, Math.min(100, Number(matches.at(-1)[1])));
+                if (Date.now() - job.lastSaved >= 1000) {
+                    job.lastSaved = Date.now();
+                    this.saveCache().catch(err => console.error('Cache progress save failed:', err.message));
+                }
+                onProgress(text);
+            }, null, { signal: job.controller.signal });
+            if (job.controller.signal.aborted) throw failure('Download cancelled');
+            entry.diskSize = await this.getDiskSize(await this.getCachePath(appId));
+            entry.status = job.controller.signal.aborted ? 'cancelled' : 'ready';
+            if (entry.status === 'ready') { entry.progress = 100; entry.downloadedDate = new Date().toISOString(); }
         } catch (err) {
-            // Update cache status to error
-            this.cache[appId] = {
-                name: gameName,
-                status: 'error',
-                downloadedDate: null,
-                lastChecked: new Date().toISOString(),
-                diskSize: null,
-                error: err.message
-            };
-            await this.saveCache();
-            throw err;
+            entry.status = job.controller.signal.aborted ? 'cancelled' : 'error';
+            entry.error = entry.status === 'cancelled' ? 'Download cancelled. Retry to resume.' : err.message;
+        } finally {
+            entry.lastChecked = new Date().toISOString();
+            try { await this.saveCache(); }
+            catch (err) { console.error('Cache completion save failed:', err.message); }
+            this.jobs.delete(appId);
         }
+        return { success: entry.status === 'ready', status: entry.status };
     }
-
+    async cancelDownload(appId) {
+        await this.ready;
+        appId = this.checkId(appId);
+        const job = this.jobs.get(appId);
+        if (!job) throw failure('No download is running');
+        job.controller.abort();
+        // The runner owns the final status only after SteamCMD has closed.
+        await job.completion;
+        return { success: true, status: this.cache[appId].status };
+    }
+    // Compatibility for callers that explicitly need to wait for a complete download.
+    async downloadToCache(appId, gameName, onProgress) {
+        await this.startDownload(appId, gameName, onProgress);
+        return this.jobs.get(String(appId))?.completion || { success: this.cache[appId]?.status === 'ready' };
+    }
     async copyFromCache(appId, targetPath) {
-        const isCached = await this.isCached(appId);
-        if (!isCached) {
-            throw new Error(`Game ${appId} is not cached. Please download it first.`);
-        }
-
-        const cachePath = await this.getCachePath(appId);
-
-        // Copy the cached game to the target path
-        await fs.copy(cachePath, targetPath, {
-            overwrite: false,
-            errorOnExist: false
-        });
-
+        if (!await this.isCached(appId)) throw failure(`Game ${appId} is not cached. Please download it first.`, 400);
+        await fs.copy(await this.getCachePath(appId), targetPath, { overwrite: false, errorOnExist: false });
         return { success: true };
     }
-
     async deleteCache(appId) {
-        const cachePath = await this.getCachePath(appId);
-
-        if (await fs.pathExists(cachePath)) {
-            await fs.remove(cachePath);
-        }
-
-        delete this.cache[appId];
-        await this.saveCache();
-
-        return { success: true };
+        await this.ready;
+        appId = this.checkId(appId);
+        if (this.jobs.has(appId) || this.deleting.has(appId)) throw failure('Cannot delete cache while an operation is running');
+        this.deleting.add(appId);
+        try {
+            await fs.remove(await this.getCachePath(appId));
+            delete this.cache[appId];
+            await this.saveCache();
+            return { success: true };
+        } finally { this.deleting.delete(appId); }
     }
-
     async getDiskSize(dirPath) {
         let totalSize = 0;
 
@@ -151,11 +140,6 @@ class CacheService {
         return (totalSize / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
-    async getCacheStatus(appId) {
-        await this.loadCache();
-        return this.cache[appId] || { status: 'not_cached' };
-    }
 }
-
-const cacheService = new CacheService();
-module.exports = cacheService;
+module.exports = new CacheService();
+module.exports.CacheService = CacheService;

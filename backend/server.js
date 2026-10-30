@@ -1054,7 +1054,7 @@ app.delete('/api/server/:id/workshop/installed/:addonId', requireAdmin, async (r
 // ============================================
 
 // List all cached games
-app.get('/api/cache/list', async (req, res) => {
+app.get('/api/cache/list', requireAdmin, async (req, res) => {
     try {
         const cached = await cacheService.listCached();
         res.json({ cached });
@@ -1068,18 +1068,25 @@ app.get('/api/cache/list', async (req, res) => {
 app.post('/api/cache/download/:appId', requireAdmin, async (req, res) => {
     const { appId } = req.params;
     if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
-    const { gameName } = req.body;
+    const { gameName } = req.body || {};
 
     try {
         // Start download in background
-        const result = await cacheService.downloadToCache(appId, gameName, (log) => {
+        const result = await cacheService.startDownload(appId, gameName, (log) => {
             io.to('admins').emit(`cache-download-${appId}`, log);
         });
-        res.json(result);
+        res.status(202).json(result);
     } catch (err) {
         console.error('Error downloading to cache:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
+});
+
+app.post('/api/cache/:appId/cancel', requireAdmin, async (req, res) => {
+    const { appId } = req.params;
+    if (!isNumericId(appId)) return res.status(400).json({ error: 'Unknown game' });
+    try { res.json(await cacheService.cancelDownload(appId)); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // Check if game is cached
@@ -1089,6 +1096,10 @@ app.get('/api/cache/status/:appId', async (req, res) => {
 
     try {
         const status = await cacheService.getCacheStatus(appId);
+        if (req.user.role !== 'admin') {
+            const { logs, error, ...metadata } = status;
+            return res.json(metadata);
+        }
         res.json(status);
     } catch (err) {
         console.error('Error getting cache status:', err);
@@ -1106,7 +1117,7 @@ app.delete('/api/cache/:appId', requireAdmin, async (req, res) => {
         res.json(result);
     } catch (err) {
         console.error('Error deleting cache:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
 

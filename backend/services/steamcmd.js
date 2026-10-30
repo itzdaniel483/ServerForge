@@ -15,9 +15,17 @@ const EXECUTABLE = path.join(INSTALL_DIR, IS_WIN ? 'steamcmd.exe' : 'steamcmd.sh
 class SteamCMD {
     constructor() {
         this.ready = false;
+        this.initializing = null;
+        this.children = new Set();
     }
 
     async init() {
+        if (this.initializing) return this.initializing;
+        this.initializing = this.initialize().finally(() => { this.initializing = null; });
+        return this.initializing;
+    }
+
+    async initialize() {
         if (fs.existsSync(EXECUTABLE)) {
             this.ready = true;
             console.log('SteamCMD found.');
@@ -78,66 +86,81 @@ rcon_password "${rconPassword}"
         console.log(`Created server config at ${cfgPath}`);
     }
 
-    async install(appId, installPath, onLog, beta = null) {
-        if (!this.ready) await this.init();
-
+    async install(appId, installPath, onLog, beta = null, { signal } = {}) {
+        const abortError = () => Object.assign(new Error('SteamCMD install cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
+        if (signal?.aborted) throw abortError();
         if (!/^\d{1,12}$/.test(String(appId))) throw new Error('Invalid app ID');
+        if (!this.ready) {
+            // Initialization is shared. One caller cancelling must not cancel another caller's download,
+            // but this install must return promptly and never spawn after its signal has been aborted.
+            await new Promise((resolve, reject) => {
+                const aborted = () => { cleanup(); reject(abortError()); };
+                const cleanup = () => signal?.removeEventListener('abort', aborted);
+                signal?.addEventListener('abort', aborted, { once: true });
+                if (signal?.aborted) return aborted();
+                this.init().then(() => { cleanup(); resolve(); }, err => { cleanup(); reject(err); });
+            });
+        }
+        if (signal?.aborted) throw abortError();
+
         return new Promise((resolve, reject) => {
-            const args = [
-                '+force_install_dir', installPath,
-                '+login', 'anonymous',
-                '+app_update', appId
-            ];
-
-            // Add beta branch if specified
-            if (beta) {
-                args.push('-beta', beta);
-            }
-
+            const args = ['+force_install_dir', installPath, '+login', 'anonymous', '+app_update', String(appId)];
+            if (beta) args.push('-beta', beta);
             args.push('+quit');
+            const child = spawn(EXECUTABLE, args, { detached: !IS_WIN });
+            this.children.add(child);
+            let success = false, aborted = false, closed = false, settled = false;
+            let exitCode, exitSignal, startError, successTimer, killTimer;
+            let terminating = false, treeKilled = false;
+            let outputTail = '';
 
-            console.log(`Running SteamCMD: ${EXECUTABLE} ${args.join(' ')}`);
-            const process = spawn(EXECUTABLE, args);
-
-            let isFinished = false;
-            // Without this, a missing SteamCMD crashes the whole panel instead of failing the install.
-            process.on('error', err => reject(new Error(`SteamCMD could not start: ${err.message}`)));
-
-            process.stdout.on('data', (data) => {
-                const msg = data.toString();
-                // Only emit logs if we haven't finished yet
-                if (onLog && !isFinished) onLog(msg);
-                console.log(`[SteamCMD] ${msg.trim()}`);
-
-                // Detect success message to handle cases where SteamCMD hangs
-                if ((msg.includes('Success! App') && msg.includes('fully installed')) ||
-                    (msg.includes('Success! App') && msg.includes('already up to date'))) {
-                    console.log('[SteamCMD] Success message detected. Marking as complete.');
-                    isFinished = true; // Stop sending logs to frontend
-
-                    // We wait a brief moment for any final cleanup then resolve
-                    setTimeout(() => {
-                        if (!process.killed) process.kill(); // Force kill if it hangs
-                        resolve();
-                    }, 2000);
-                }
-            });
-
-            process.stderr.on('data', (data) => {
-                const msg = data.toString();
-                if (onLog && !isFinished) onLog(msg);
-                console.error(`[SteamCMD Error] ${msg.trim()}`);
-            });
-
-            process.on('close', (code) => {
-                console.log(`[SteamCMD] Process exited with code ${code}`);
-                // SteamCMD exit codes: 0 = success, 7 = reboot required
-                if (code === 0 || code === 7 || code === null) { // code is null if we killed it
-                    resolve();
+            const killTree = force => {
+                if (!child.pid) return;
+                if (IS_WIN) {
+                    // taskkill traverses descendants even when SteamCMD has spawned a wrapper.
+                    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+                    killer.on('error', () => { try { child.kill(); } catch { /* already exited */ } });
                 } else {
-                    reject(new Error(`SteamCMD exited with code ${code}`));
+                    try { process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM'); }
+                    catch (err) { if (err.code !== 'ESRCH') { try { child.kill(force ? 'SIGKILL' : 'SIGTERM'); } catch { /* already exited */ } } }
+                }
+            };
+            const finish = () => {
+                if (settled || !closed || (terminating && !treeKilled)) return;
+                settled = true;
+                clearTimeout(successTimer); clearTimeout(killTimer);
+                signal?.removeEventListener('abort', onAbort);
+                this.children.delete(child);
+                if (aborted) reject(abortError());
+                else if (startError) reject(new Error(`SteamCMD could not start: ${startError.message}`));
+                else if (success || exitCode === 0 || exitCode === 7) resolve();
+                else reject(new Error(`SteamCMD exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`));
+            };
+            const terminate = () => {
+                if (terminating) return;
+                terminating = true;
+                killTree(false);
+                // Keep the escalation even if the parent closes first: descendants may ignore TERM.
+                killTimer = setTimeout(() => { killTree(true); treeKilled = true; finish(); }, 1000);
+            };
+            const onAbort = () => { aborted = true; clearTimeout(successTimer); terminate(); };
+            signal?.addEventListener('abort', onAbort, { once: true });
+            if (signal?.aborted) onAbort();
+
+            child.on('error', err => { startError = err; });
+            child.stdout.on('data', data => {
+                const msg = data.toString();
+                if (onLog && !success && !aborted) onLog(msg);
+                // SteamCMD may split a success line over stream chunks.
+                outputTail = (outputTail + msg).slice(-8192);
+                if (!success && !aborted && /Success! App[^\r\n]*(?:fully installed|already up to date)/.test(outputTail)) {
+                    success = true;
+                    // Allow normal cleanup, then stop a hung process without resolving before close.
+                    successTimer = setTimeout(terminate, 2000);
                 }
             });
+            child.stderr.on('data', data => { if (onLog && !success && !aborted) onLog(data.toString()); });
+            child.on('close', (code, sig) => { closed = true; exitCode = code; exitSignal = sig; finish(); });
         });
     }
 

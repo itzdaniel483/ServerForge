@@ -31,6 +31,8 @@ test.before(async () => {
     fs.mkdirSync(fake, { recursive: true });
     fs.writeFileSync(path.join(fake, 'run.sh'), '#!/bin/sh\nwhile true; do echo tick; sleep 1; done\n', { mode: 0o755 });
     fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
+    fs.mkdirSync(path.join(tmp, 'steamcmd'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'steamcmd', 'steamcmd.sh'), '#!/bin/sh\ntrap "exit 1" TERM\necho "progress: 42.5 (test)"\nwhile true; do sleep 1; done\n', { mode: 0o755 });
     fs.writeFileSync(path.join(tmp, 'data', 'servers.json'), JSON.stringify([{ id: 'fake1', name: 'Fake', game: 'Test', appId: '4020', path: fake, port: 27999, rconPassword: 'r', status: 'stopped', owner: 'admin', executable: 'run.sh', args: [] },
         { id: 'half1', name: 'Half', game: 'Test', appId: '4020', path: path.join(tmp, 'servers', 'half'), port: 27998, rconPassword: 'r', status: 'installing', owner: 'admin', executable: 'run.sh', args: [] }]));
     const port = await freePort();
@@ -155,6 +157,26 @@ test('password changes revoke HTTP tokens and live sockets, but failed changes p
         const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'data', 'users.json'), 'utf8'));
         assert.equal(saved.find(user => user.id === login.data.user.id).sessionVersion, 1);
     } finally { socket.close(); }
+});
+
+test('cache download responds in background, tracks progress, refuses deletion, and cancels', async () => {
+    assert.equal((await api('POST', '/api/cache/4020/cancel', { token: userToken })).status, 403);
+    assert.equal((await api('POST', '/api/cache/nope/cancel', { token: adminToken })).status, 400);
+    const start = await api('POST', '/api/cache/download/4020', { token: adminToken, body: { gameName: 'Fake cache' } });
+    assert.equal(start.status, 202);
+    assert.equal(start.data.status, 'downloading');
+    assert.equal((await api('POST', '/api/cache/download/4020', { token: adminToken, body: {} })).status, 409);
+    assert.equal((await api('DELETE', '/api/cache/4020', { token: adminToken })).status, 409);
+    let status;
+    for (let i = 0; i < 30; i++) {
+        status = (await api('GET', '/api/cache/status/4020', { token: adminToken })).data;
+        if (status.progress === 42.5) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(status.progress, 42.5);
+    assert.equal((await api('POST', '/api/cache/4020/cancel', { token: adminToken })).data.status, 'cancelled');
+    assert.equal((await api('GET', '/api/cache/status/4020', { token: adminToken })).data.status, 'cancelled');
+    assert.equal((await api('DELETE', '/api/cache/4020', { token: adminToken })).status, 200);
 });
 
 test('login is throttled after repeated failures', async () => {

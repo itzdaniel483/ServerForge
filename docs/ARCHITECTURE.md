@@ -14,6 +14,8 @@ flowchart LR
         ROUTES --> PM[processManager<br/>start / stop / crash restart]
         ROUTES --> SCH[schedulerService<br/>cron tasks]
         ROUTES --> BK[backupService]
+        ROUTES --> CACHE[cacheService<br/>background job + AbortController]
+        CACHE --> STEAM
         ROUTES --> LOG[auditLog]
         IO[Socket.IO]
         ROUTES -- "Access change: evict revoked viewers" --> IO
@@ -36,6 +38,8 @@ flowchart LR
 - Every change is written to the activity log.
 
 **State:** `DATA_DIR` holds `users.json`, `servers.json`, `tasks.json`, `activity.jsonl`, `jwt-secret` and `initial-admin-password`. All are owner-only files.
+
+**Cache jobs:** `POST /api/cache/download/:appId` saves/reserves the job and returns 202 while SteamCMD runs in the background. Duplicate starts and deletion during a job return 409. `POST /api/cache/:appId/cancel` aborts the tracked installer process group and waits for child closure before returning `cancelled`; the entry remains `downloading` during cancellation and the reservation remains held. Interrupted downloads become `interrupted` at startup; retry resumes the existing folder. Progress is clamped to 0–100 and persisted at most once per second, with a final terminal save; logs keep the latest 100 lines/about 16KB. Admins can read logs via cache list/status; ordinary users receive metadata only. SteamCMD signal exits are failures unless a genuine success message was observed, and explicit abort always wins. Windows tree termination is implemented but requires validation on Windows.
 
 **Dashboard data:** authenticated `/api/host` is available to admins and users with server view access. It returns CPU percent from a two-second sample and memory/disk used/total in bytes; unavailable values are null. `/api/servers` adds nullable `players`/`maxPlayers` from recent game queries, cleared on failure or process changes and expired after 30 seconds. Queries finishing for replaced processes are discarded.
 
