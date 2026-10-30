@@ -89,3 +89,10 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Tested 1440 + 390 every screen; multi-node mock 22/22; LIVE e987477
 - [ ] codex independent review (layout, keyboard, phone)
 - [x] Daniel approved v3 ("Looks good", 14:36): sidebar stays
+
+## Daniel 2026-10-30 16:53 (#gamemanager 3576): after the Windows node joined
+- [ ] 1. Install reports "Installed" only when SteamCMD says fully installed; retry/incomplete state (codex) — Gmod on Windows node was half-installed
+- [ ] 2. TCAdmin-style command line: template with {vars} + custom parameters that survive settings saves + preview/reset (codex engine, claude UI)
+- [ ] 3. Game-mode presets at install (Gmod: Sandbox, TTT, DarkRP + auto-download, Prop Hunt, Murder, Workshop collection) (codex install, claude picker)
+- [ ] 4. Move a server between nodes (Daniel to choose: full copy vs fresh install + configs/saves) (codex transfer, claude "Move to…" UI)
+- [x] Windows Setup fixes during the VM test: hidden ProgramData, LocalService via WMI, leftover service, stale identity + .bak, PS 5.1 exit code; build parses every .ps1
