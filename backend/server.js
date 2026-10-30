@@ -482,6 +482,13 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         log('Packing configs and saves…');
         archive = await call(src.node, 'POST', `/api/server/${src.id}/export`, {});
         log(`Packed ${archive.entries} items (${Math.round(archive.size / 1024)} KB).`);
+        // Port already used on the target (e.g. it has its own Gmod on 27015)? Take the next free one and say so.
+        const taken = new Set((await call(targetNodeId, 'GET', '/api/servers')).filter(x => (x.nodeId || 'local') === 'local' || targetNodeId !== 'local').map(x => Number(x.port)));
+        if (taken.has(Number(vars.port))) {
+            let p = Number(vars.port) + 1; while (taken.has(p) && p < 65535) p++;
+            log(`Port ${vars.port} is already used on the new machine; using ${p} instead.`);
+            vars.port = p;
+        }
         job.step = 'installing'; job.progress = 10;
         log(`Installing ${game.name} on the new machine (this downloads the game; it can take a while)…`);
         const installed = await call(targetNodeId, 'POST', '/api/install', { gameId: game.id, vars, ...(mode ? { mode: mode.id } : {}) }, { timeoutMs: 1800000 });
