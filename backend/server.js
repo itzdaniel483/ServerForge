@@ -33,6 +33,7 @@ const io = new Server(server, {
     cors: process.env.APP_URL ? { origin: process.env.APP_URL, methods: ["GET", "POST"] } : undefined
 });
 io.use(socketAuth);
+userStore.on('identities-changed', users => require('./services/socketSessions').invalidateChangedUsers(io, users));
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {

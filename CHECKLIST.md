@@ -19,7 +19,8 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Crash-safe data files: atomic write + .bak restore (host crash 2026-10-30 left servers.json at 0 bytes)
 - [x] Scheduler 5-minute gap enforced for cron ranges/lists (codex finding)
 - [x] Revoking server access evicts live-log sockets (codex)
-- [ ] Deleting/demoting a user drops their live sockets (follow-up)
+- [x] Deleting/renaming/demoting a user disconnects their live sockets (codex)
+- [ ] Password change or reset should end existing sessions (JWT still valid)
 - [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
 - [x] Real install verified end to end: Valheim installed (2.1 GB), started, listening, stopped (2026-10-30)
 - [x] Valheim UDP 2456-2457 open to .109/.134/.217 only (Daniel, 2026-10-30); join details in console outbox

@@ -189,6 +189,29 @@ test('revoking server access stops live logs on an existing socket', async () =>
     }
 });
 
+test('deleting an account disconnects its live socket and refuses its old token', async () => {
+    const users = await api('GET', '/api/users', { token: adminToken });
+    const user = users.data.find(user => user.username === 'player');
+    const token = userToken;
+    const socket = io(base, { auth: { token }, transports: ['websocket'], reconnection: false, timeout: 3000 });
+    try {
+        await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
+        socket.emit('watch', 'fake1');
+        const disconnected = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('deleted account socket remained connected')), 3000);
+            socket.once('disconnect', reason => { clearTimeout(timer); resolve(reason); });
+        });
+        assert.equal((await api('DELETE', `/api/users/${user.id}`, { token: adminToken })).status, 200);
+        assert.equal(await disconnected, 'io server disconnect');
+        assert.equal((await api('GET', '/api/servers', { token })).status, 401);
+        const retry = io(base, { auth: { token }, transports: ['websocket'], reconnection: false, timeout: 3000 });
+        try {
+            const outcome = await new Promise(resolve => { retry.once('connect', () => resolve('connected')); retry.once('connect_error', () => resolve('refused')); });
+            assert.equal(outcome, 'refused');
+        } finally { retry.close(); }
+    } finally { socket.close(); }
+});
+
 test('an install cut off by a restart shows as failed and cannot be started', async () => {
     const list = await api('GET', '/api/servers', { token: adminToken });
     const half = list.data.find(s => s.id === 'half1');

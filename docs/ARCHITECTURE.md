@@ -30,6 +30,7 @@ flowchart LR
 - Only admins can install, change launch lines or settings, write files, or manage tasks and access.
 - Users only see the servers they were given, with the permissions chosen in the Access tab.
 - Saving server access also removes revoked viewers from existing Socket.IO rooms. The `watch` handler checks access again before joining.
+- Successful local user saves emit an identity snapshot. Deleted accounts or changed roles/names disconnect their existing sockets, clearing all rooms and requiring a fresh authenticated connection. Cloudflare identities are separate from local accounts. There is currently no role-edit API; the same invalidation applies when a future role editor saves through the user store.
 - Every change is written to the activity log.
 
 **State:** `DATA_DIR` holds `users.json`, `servers.json`, `tasks.json`, `activity.jsonl`, `jwt-secret` and `initial-admin-password`. All are owner-only files.

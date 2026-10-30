@@ -3,11 +3,13 @@ const path = require('path');
 const { readJson, writeJson, isCorruptWithoutBackup } = require('./jsonFile');
 const bcrypt = require('bcryptjs');
 const { randomUUID: uuidv4 } = require('crypto');
+const { EventEmitter } = require('events');
 
 const DATA_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'users.json');
 
-class UserStore {
+class UserStore extends EventEmitter {
     constructor() {
+        super();
         this.users = [];
         this.initialized = false;
     }
@@ -40,6 +42,7 @@ class UserStore {
 
     async save() {
         await writeJson(DATA_FILE, this.users);
+        this.emit('identities-changed', this.users.map(({ id, username, role }) => ({ id, username, role })));
     }
 
     async addUser(username, password, role = 'user') {
