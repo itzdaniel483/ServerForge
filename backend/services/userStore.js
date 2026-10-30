@@ -42,7 +42,7 @@ class UserStore extends EventEmitter {
 
     async save() {
         await writeJson(DATA_FILE, this.users);
-        this.emit('identities-changed', this.users.map(({ id, username, role }) => ({ id, username, role })));
+        this.emit('identities-changed', this.users.map(({ id, username, role, sessionVersion = 0 }) => ({ id, username, role, sessionVersion })));
     }
 
     async addUser(username, password, role = 'user') {
@@ -62,6 +62,7 @@ class UserStore extends EventEmitter {
             username,
             passwordHash,
             role,
+            sessionVersion: 0,
             createdAt: new Date().toISOString()
         };
 
@@ -78,10 +79,14 @@ class UserStore extends EventEmitter {
             return null;
         }
 
-        const isValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isValid) return null;
+        const passwordHash = user.passwordHash;
+        const sessionVersion = user.sessionVersion ?? 0;
+        const isValid = await bcrypt.compare(password, passwordHash);
+        // A rotation may complete while bcrypt yields. Never mint a new-version
+        // token for credentials checked against the previous hash.
+        if (!isValid || user.passwordHash !== passwordHash || (user.sessionVersion ?? 0) !== sessionVersion) return null;
 
-        return { id: user.id, username: user.username, role: user.role };
+        return { id: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion ?? 0 };
     }
 
     async getUsers() {
@@ -90,6 +95,7 @@ class UserStore extends EventEmitter {
             id: u.id,
             username: u.username,
             role: u.role,
+            sessionVersion: u.sessionVersion ?? 0,
             createdAt: u.createdAt
         }));
     }
@@ -127,6 +133,7 @@ class UserStore extends EventEmitter {
 
         // Update password
         user.passwordHash = passwordHash;
+        user.sessionVersion = (user.sessionVersion ?? 0) + 1;
         await this.save();
 
         return { success: true };

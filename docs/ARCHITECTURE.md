@@ -34,3 +34,5 @@ flowchart LR
 - Every change is written to the activity log.
 
 **State:** `DATA_DIR` holds `users.json`, `servers.json`, `tasks.json`, `activity.jsonl`, `jwt-secret` and `initial-admin-password`. All are owner-only files.
+
+**Password changes:** local accounts persist a `sessionVersion`, included in login tokens and socket identities. A successful password change increments it, so prior HTTP tokens and socket handshakes are refused and existing sockets disconnect. The changing browser must sign in again. Legacy accounts/tokens without a version use 0 until their first password change. Cloudflare authentication is unchanged; any future password-reset path must also increment the version.

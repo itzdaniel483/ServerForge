@@ -105,6 +105,48 @@ test('paths stay inside the server folder; executables cannot point outside it',
     assert.equal((await api('DELETE', '/api/cache/..%2F..%2Fetc', { token: adminToken })).status, 400);
 });
 
+test('password changes revoke HTTP tokens and live sockets, but failed changes preserve them', async () => {
+    assert.equal((await api('POST', '/api/users', { token: adminToken, body: { username: 'password-test', password: 'old-password-1', role: 'user' } })).status, 200);
+    const login = await api('POST', '/api/login', { body: { username: 'password-test', password: 'old-password-1' } });
+    const token = login.data.token;
+    // Pre-version tokens remain valid at version 0, then are revoked by the change too.
+    const jwt = require('../node_modules/jsonwebtoken');
+    const secret = fs.readFileSync(path.join(tmp, 'data', 'jwt-secret'), 'utf8').trim();
+    const legacy = jwt.sign({ id: login.data.user.id }, secret, { expiresIn: '1h' });
+    assert.equal((await api('GET', '/api/servers', { token: legacy })).status, 200);
+    const socket = io(base, { auth: { token }, transports: ['websocket'], reconnection: false, timeout: 3000 });
+    try {
+        await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
+        for (const body of [
+            { currentPassword: 'wrong-password', newPassword: 'new-password-1' },
+            { currentPassword: 'old-password-1', newPassword: 'short' },
+        ]) {
+            assert.equal((await api('POST', '/api/users/change-password', { token, body })).status, 400);
+            assert.equal((await api('GET', '/api/servers', { token })).status, 200);
+            assert.equal(socket.connected, true);
+        }
+        const disconnected = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('password change did not disconnect socket')), 3000);
+            socket.once('disconnect', reason => { clearTimeout(timer); resolve(reason); });
+        });
+        assert.equal((await api('POST', '/api/users/change-password', { token, body: { currentPassword: 'old-password-1', newPassword: 'new-password-1' } })).status, 200);
+        assert.equal(await disconnected, 'io server disconnect');
+        for (const old of [token, legacy]) assert.equal((await api('GET', '/api/servers', { token: old })).status, 401);
+        const retry = io(base, { auth: { token }, transports: ['websocket'], reconnection: false, timeout: 3000 });
+        try {
+            const outcome = await new Promise(resolve => { retry.once('connect', () => resolve('connected')); retry.once('connect_error', () => resolve('refused')); });
+            assert.equal(outcome, 'refused');
+        } finally { retry.close(); }
+        assert.equal((await api('POST', '/api/login', { body: { username: 'password-test', password: 'old-password-1' } })).status, 401);
+        const fresh = await api('POST', '/api/login', { body: { username: 'password-test', password: 'new-password-1' } });
+        assert.equal(fresh.status, 200);
+        assert.equal(jwt.decode(fresh.data.token).sessionVersion, 1);
+        assert.equal((await api('GET', '/api/servers', { token: fresh.data.token })).status, 200);
+        const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'data', 'users.json'), 'utf8'));
+        assert.equal(saved.find(user => user.id === login.data.user.id).sessionVersion, 1);
+    } finally { socket.close(); }
+});
+
 test('login is throttled after repeated failures', async () => {
     let last;
     for (let i = 0; i < 11; i++) last = await api('POST', '/api/login', { body: { username: 'nobody', password: 'wrong-password' } });

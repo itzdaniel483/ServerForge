@@ -144,7 +144,7 @@ app.post('/api/login', async (req, res) => {
         loginSucceeded(ip);
 
         const token = jwt.sign(
-            { id: user.id, username: user.username, role: user.role },
+            { id: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion },
             JWT_SECRET,
             { expiresIn: '24h' }
         );

@@ -7,7 +7,8 @@ function invalidateChangedUsers(io, users) {
         // Cloudflare identities have no local account id.
         if (!identity?.id) continue;
         const user = current.get(identity.id);
-        if (!user || user.username !== identity.username || user.role !== identity.role) socket.disconnect(true);
+        if (!user || user.username !== identity.username || user.role !== identity.role ||
+            (user.sessionVersion ?? 0) !== (identity.sessionVersion ?? 0)) socket.disconnect(true);
     }
 }
 
