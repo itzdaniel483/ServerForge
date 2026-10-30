@@ -55,7 +55,7 @@ function MoveDialog({ server, onClose, onMoved }) {
     }
 
     const targetNode = nodes?.find(n => n.id === target);
-    const stepIndex = move ? STEPS.findIndex(([k]) => k === move.step) : -1;
+    const stepIndex = move ? STEPS.findIndex(([k]) => k === (move.step === 'failed' ? move.failedAt : move.step)) : -1;
     return (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label={`Move ${server.name}`}>
             <Card className="w-full max-w-lg">
@@ -87,10 +87,10 @@ function MoveDialog({ server, onClose, onMoved }) {
                         <>
                             <ol className="space-y-1.5">
                                 {STEPS.map(([k, label], i) => {
-                                    const done = move.step === 'done' || i < stepIndex, now = i === stepIndex && move.step !== 'done';
+                                    const failedHere = move.step === 'failed' && i === stepIndex, done = move.step === 'done' || i < stepIndex, now = i === stepIndex && !['done', 'failed'].includes(move.step);
                                     return (
-                                        <li key={k} className={`flex items-center gap-2 text-[13px] ${done ? 'text-go-300' : now ? 'text-white' : 'text-gray-500'}`}>
-                                            <span className={`w-4 h-4 rounded-full grid place-items-center border ${done ? 'border-go-500 bg-go-500/20' : now ? 'border-accent-500' : 'border-gray-700'}`}>{done && <Check size={10} />}{now && <span className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse" />}</span>{label}
+                                        <li key={k} className={`flex items-center gap-2 text-[13px] ${failedHere ? 'text-stop-300' : done ? 'text-go-300' : now ? 'text-white' : 'text-gray-500'}`}>
+                                            <span className={`w-4 h-4 rounded-full grid place-items-center border ${failedHere ? 'border-stop-500 bg-stop-500/20' : done ? 'border-go-500 bg-go-500/20' : now ? 'border-accent-500' : 'border-gray-700'}`}>{failedHere && <X size={10} />}{done && <Check size={10} />}{now && <span className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse" />}</span>{label}
                                         </li>
                                     );
                                 })}

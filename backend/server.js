@@ -439,9 +439,10 @@ async function moveCaller(req) {
         if (side === 'local') {
             if (!token) throw new Error('Cannot act as this user locally');
             const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : '127.0.0.1'}:${PORT}${route}${query ? `?${new URLSearchParams(query)}` : ''}`;
-            const r = await fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
-            const data = await r.json().catch(() => ({}));
-            if (!r.ok) throw Object.assign(new Error(data.error || `${route} failed (${r.status})`), { status: r.status });
+            // node:http, not fetch: a local install can take far longer than fetch's 300 s header limit.
+            const r = await require('./services/longRequest').longRequest(url, { method, timeoutMs, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+            let data = {}; try { data = r.text ? JSON.parse(r.text) : {}; } catch { data = {}; }
+            if (r.status < 200 || r.status >= 300) throw Object.assign(new Error(data.error || `${route} failed (${r.status})`), { status: r.status });
             return data;
         }
         if (!nodeTransport?.listStatus()[side]?.online) throw new Error('That machine is offline');
@@ -506,7 +507,7 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         if (!running) throw new Error('It installed but did not stay running on the new machine');
         job.step = 'done'; job.progress = 100; log('Running on the new machine.');
     } catch (err) {
-        job.step = 'failed'; job.error = err.message; log(`Failed: ${err.message}`);
+        job.failedAt = job.step; job.step = 'failed'; job.error = err.code === 'OUTCOME_UNKNOWN' || /outcome is unknown/i.test(err.message) ? `${err.message}. The other machine may still be finishing that step: check its server list before trying again.` : err.message; log(`Failed: ${job.error}`);
         if (created) { try { await call(targetNodeId, 'DELETE', `/api/server/${created}`); log('Removed the half-made copy on the new machine.'); } catch { /* best effort */ } }
         if (job.wasRunning) { try { await call(src.node, 'POST', '/api/server/start', { id: src.id }); log('Restarted the original.'); } catch { /* best effort */ } }
     } finally {

@@ -88,8 +88,16 @@ class NodeRuntime {
         for (const [key, value] of Object.entries(local.query || {})) if (value !== undefined) url.searchParams.set(key, String(value));
         const serialized = local.body === undefined ? undefined : JSON.stringify(local.body);
         if (serialized && Buffer.byteLength(serialized) > MAX_BODY) throw problem('Request body exceeds 5 MiB', 'PAYLOAD_TOO_LARGE', 413);
+        const long = local.path === '/api/install' || /\/update$/.test(local.path);
+        // Installs/updates answer only when SteamCMD is done: fetch would give up after 300 s, so use node:http.
+        if (long && this.fetch === globalThis.fetch) {
+            const r = await require('./longRequest').longRequest(url.href, { method: local.method, timeoutMs: 30 * 60_000, maxBytes: MAX_RESPONSE,
+                headers: { Authorization: `Bearer ${await this.token(actor)}`, ...(serialized ? { 'Content-Type': 'application/json' } : {}) }, body: serialized });
+            let body; try { body = r.text ? JSON.parse(r.text) : null; } catch { throw problem('Local panel returned a non-JSON response', 'LOCAL_PANEL_INVALID', 502); }
+            return { status: r.status, body };
+        }
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), local.path === '/api/install' || /\/update$/.test(local.path) ? 30 * 60_000 : 5 * 60_000);
+        const timeout = setTimeout(() => controller.abort(), long ? 30 * 60_000 : 5 * 60_000);
         timeout.unref?.();
         try {
             const response = await this.fetch(url.href, { method: local.method, redirect: 'error', signal: controller.signal,
