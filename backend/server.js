@@ -408,6 +408,126 @@ app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
     } catch (err) { job.step = 'failed'; job.error = err.message; }
 });
 
+// ---- Move a server to another machine (claude, Daniel #gamemanager 3576/3580). ----
+// Per machine: pack the game's configs/saves, hand the archive out in chunks, receive + unpack into a server folder.
+const moveArchive = require('./services/moveArchive');
+const moveErr = (res, err) => res.status(err.status || 400).json({ error: err.message, code: err.code });
+const gameOf = srv => catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+app.post('/api/server/:id/export', requireAdmin, (req, res) => {
+    const srv = serverStore.get(req.params.id); if (!srv) return res.status(404).json({ error: 'Server not found' });
+    try { res.json(moveArchive.exportServer(srv.path, moveArchive.keepPaths(gameOf(srv)))); } catch (err) { moveErr(res, err); }
+});
+app.get('/api/move-archive/:token', requireAdmin, (req, res) => { try { res.json(moveArchive.readChunk(req.params.token, req.query.offset)); } catch (err) { moveErr(res, err); } });
+app.delete('/api/move-archive/:token', requireAdmin, (req, res) => { try { res.json(moveArchive.cleanup(req.params.token)); } catch (err) { moveErr(res, err); } });
+app.post('/api/server/:id/import-chunk', requireAdmin, (req, res) => {
+    if (!serverStore.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    try { res.json(moveArchive.receiveChunk(req.body || {})); } catch (err) { moveErr(res, err); }
+});
+app.post('/api/server/:id/import', requireAdmin, (req, res) => {
+    const srv = serverStore.get(req.params.id); if (!srv) return res.status(404).json({ error: 'Server not found' });
+    try { res.json(moveArchive.importInto(srv.path, req.body?.token)); } catch (err) { moveErr(res, err); }
+});
+
+// Hub: the move job. Each step talks to the source/target the same way the browser would: local routes over HTTP
+// with a short-lived token for the admin who started it, remote ones as named actions over the node link.
+const moveJobs = new Map();
+async function moveCaller(req) {
+    const user = (await userStore.getUsers()).find(u => u.id === req.user.id);
+    const token = user ? jwt.sign({ id: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion }, JWT_SECRET, { expiresIn: '2h' }) : null;
+    const actor = { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role };
+    return async (side, method, route, body, { query, timeoutMs = 120000 } = {}) => {
+        if (side === 'local') {
+            if (!token) throw new Error('Cannot act as this user locally');
+            const url = `http://${HOST && HOST !== '0.0.0.0' ? HOST : '127.0.0.1'}:${PORT}${route}${query ? `?${new URLSearchParams(query)}` : ''}`;
+            const r = await fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw Object.assign(new Error(data.error || `${route} failed (${r.status})`), { status: r.status });
+            return data;
+        }
+        if (!nodeTransport?.listStatus()[side]?.online) throw new Error('That machine is offline');
+        const mapped = require('./services/nodeActions').classifyRemoteRequest(method, route, body || {}, query || {});
+        if (!mapped) throw new Error(`Unsupported step ${method} ${route}`);
+        const r = await nodeTransport.request(side, mapped.action, mapped.params, actor, { timeoutMs });
+        if (r.status < 200 || r.status >= 300) throw Object.assign(new Error(r.body?.error || `${mapped.action} failed (${r.status})`), { status: r.status });
+        return r.body;
+    };
+}
+const splitId = id => { const m = /^([0-9a-f-]{36}):(.+)$/.exec(id); return m ? { node: m[1], id: m[2] } : { node: 'local', id }; };
+app.post('/api/moves', requireAdmin, async (req, res) => {
+    const { serverId, targetNodeId } = req.body || {};
+    if (typeof serverId !== 'string' || typeof targetNodeId !== 'string') return res.status(400).json({ error: 'Pick a server and a machine' });
+    const src = splitId(serverId);
+    if (src.node === targetNodeId) return res.status(400).json({ error: 'The server is already on that machine' });
+    if (targetNodeId !== 'local' && !nodeRegistry.list().some(n => n.id === targetNodeId)) return res.status(404).json({ error: 'Unknown machine', code: 'NODE_UNKNOWN' });
+    const call = await moveCaller(req);
+    const moveId = crypto.randomBytes(8).toString('hex');
+    const job = { id: moveId, serverId, targetNodeId, step: 'stopping', progress: 0, log: [], error: null, newServerId: null, wasRunning: false };
+    const log = line => { job.log.push(line); if (job.log.length > 200) job.log.shift(); };
+    moveJobs.set(moveId, job);
+    audit(req, 'move', null, `${serverId} → ${targetNodeId}`);
+    res.status(202).json({ moveId });
+    let archive = null, created = null;
+    try {
+        const list = await call(src.node, 'GET', '/api/servers');
+        const srv = (Array.isArray(list) ? list : []).find(s => s.id === src.id || s.id === serverId);
+        if (!srv) throw new Error('Server not found on its machine');
+        const { vars } = await call(src.node, 'GET', `/api/server/${src.id}/settings`);
+        const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+        if (!game) throw new Error('Only servers installed from the game list can be moved');
+        const mode = (game.modes || []).find(m => m.gamemode && m.gamemode === vars?.gamemode && m.download);
+        job.wasRunning = srv.status === 'running';
+        if (job.wasRunning) { log('Stopping the server…'); await call(src.node, 'POST', '/api/server/stop', { id: src.id }); }
+        job.progress = 5;
+        log('Packing configs and saves…');
+        archive = await call(src.node, 'POST', `/api/server/${src.id}/export`, {});
+        log(`Packed ${archive.entries} items (${Math.round(archive.size / 1024)} KB).`);
+        job.step = 'installing'; job.progress = 10;
+        log(`Installing ${game.name} on the new machine (this downloads the game; it can take a while)…`);
+        const installed = await call(targetNodeId, 'POST', '/api/install', { gameId: game.id, vars, ...(mode ? { mode: mode.id } : {}) }, { timeoutMs: 1800000 });
+        created = installed?.server?.id ? splitId(installed.server.id).id : null;
+        if (!created) throw new Error('The install did not report a new server');
+        job.newServerId = targetNodeId === 'local' ? created : `${targetNodeId}:${created}`;
+        job.step = 'copying'; job.progress = 70;
+        log('Copying configs and saves…');
+        for (let offset = 0; offset < archive.size || offset === 0; ) {
+            const part = await call(src.node, 'GET', `/api/move-archive/${archive.token}`, null, { query: { offset } });
+            await call(targetNodeId, 'POST', `/api/server/${created}/import-chunk`, { token: archive.token, offset, data: part.data, total: archive.size || 1 });
+            offset += Buffer.from(part.data, 'base64').length;
+            job.progress = 70 + Math.round((offset / Math.max(archive.size, 1)) * 15);
+            if (!part.data) break;
+        }
+        const imported = await call(targetNodeId, 'POST', `/api/server/${created}/import`, { token: archive.token });
+        log(`Copied ${imported.files} files.`);
+        job.step = 'verifying'; job.progress = 90;
+        log('Starting it on the new machine…');
+        await call(targetNodeId, 'POST', '/api/server/start', { id: created });
+        let running = false;
+        for (let i = 0; i < 15 && !running; i++) { await new Promise(r => setTimeout(r, 2000)); running = (await call(targetNodeId, 'GET', `/api/server/${created}/status`)).status === 'running'; }
+        if (!running) throw new Error('It installed but did not stay running on the new machine');
+        job.step = 'done'; job.progress = 100; log('Running on the new machine.');
+    } catch (err) {
+        job.step = 'failed'; job.error = err.message; log(`Failed: ${err.message}`);
+        if (created) { try { await call(targetNodeId, 'DELETE', `/api/server/${created}`); log('Removed the half-made copy on the new machine.'); } catch { /* best effort */ } }
+        if (job.wasRunning) { try { await call(src.node, 'POST', '/api/server/start', { id: src.id }); log('Restarted the original.'); } catch { /* best effort */ } }
+    } finally {
+        if (archive?.token) { for (const side of [src.node, targetNodeId]) { try { await call(side, 'DELETE', `/api/move-archive/${archive.token}`); } catch { /* temp file */ } } }
+    }
+    job.finish = async removeSource => {
+        if (removeSource) await call(src.node, 'DELETE', `/api/server/${src.id}`);
+        job.step = 'finished';
+    };
+});
+app.get('/api/moves/:id', requireAdmin, (req, res) => {
+    const job = moveJobs.get(req.params.id); if (!job) return res.status(404).json({ error: 'Unknown move' });
+    const { finish, ...view } = job; res.json(view);
+});
+app.post('/api/moves/:id/finish', requireAdmin, async (req, res) => {
+    const job = moveJobs.get(req.params.id); if (!job) return res.status(404).json({ error: 'Unknown move' });
+    if (job.step !== 'done' || !job.finish) return res.status(409).json({ error: 'The move has not finished yet' });
+    try { await job.finish(req.body?.removeSource === true); audit(req, 'move-finish', null, `${job.serverId} removeSource=${req.body?.removeSource === true}`); res.json({ success: true }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/nodes/:id', requireAdmin, (req, res) => {
     try { nodeRegistry.remove(req.params.id); audit(req, 'node-remove', null, req.params.id); res.json({ success: true }); }
     catch (err) { nodeError(res, err); }

@@ -26,6 +26,8 @@ const definitions = {
     'launch.write': ['PUT', '/api/server/:serverId/launch', ['template', 'customArgs']],
     'update.chunk': ['POST', '/api/node-update/chunk', ['offset', 'data', 'total', 'sha256']], 'update.stage': ['POST', '/api/node-update/stage', ['manifest', 'signature']],
     'update.status': ['GET', '/api/node-update/status'],
+    'move.export': ['POST', '/api/server/:serverId/export'], 'move.read': ['GET', '/api/move-archive/:token', [], ['offset']], 'move.cleanup': ['DELETE', '/api/move-archive/:token'],
+    'move.importChunk': ['POST', '/api/server/:serverId/import-chunk', ['token', 'offset', 'data', 'total']], 'move.import': ['POST', '/api/server/:serverId/import', ['token']],
     'config.write': ['PUT', '/api/server/:serverId/config', ['executable', 'args']], 'schedule.write': ['POST', '/api/server/:serverId/schedule', ['schedule']],
     update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId'],
     install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port', 'mode', 'workshopCollection', 'gamemode']],

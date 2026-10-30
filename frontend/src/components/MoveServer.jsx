@@ -1,5 +1,5 @@
 // Move a server to another machine (claude, Daniel #gamemanager 3576/3580: fresh install on the target + copy
-// configs/saves). Contract #3584: POST /api/server/:id/move {targetNodeId} → {moveId}; GET /api/moves/:id →
+// configs/saves). POST /api/moves {serverId, targetNodeId} → {moveId}; GET /api/moves/:id →
 // {step, progress, log[], error?}; POST /api/moves/:id/finish {removeSource}. The old copy is only removed after
 // the new one has started and the admin confirms.
 import React, { useEffect, useState } from 'react';
@@ -10,10 +10,10 @@ import { Button, Card, Meter, Notice } from '../ui';
 import { OsIcon } from '../nodes';
 import { osLabel } from '../nodeUtils';
 
-const STEPS = [['stopping', 'Stop the server'], ['installing', 'Fresh install on the new machine'], ['copying', 'Copy configs and saves'], ['verifying', 'Start it there and check'], ['done', 'Moved']];
+const STEPS = [['stopping', 'Stop and pack configs/saves'], ['installing', 'Fresh install on the new machine'], ['copying', 'Copy configs and saves'], ['verifying', 'Start it there and check'], ['done', 'Moved']];
 
 // Off until the move backend ships (item #4); the button would otherwise fail.
-const MOVE_ENABLED = false;
+const MOVE_ENABLED = true;
 
 export function MoveButton({ server, onMoved }) {
     const [open, setOpen] = useState(false);
@@ -45,7 +45,7 @@ function MoveDialog({ server, onClose, onMoved }) {
     const usable = n => n.id !== from && (n.id === 'local' || (n.online && (n.actions || []).includes('install')));
     async function start() {
         setError('');
-        try { const r = await axios.post(`/api/server/${encodeURIComponent(server.id)}/move`, { targetNodeId: target }); setMove({ id: r.data.moveId, step: 'stopping', progress: 0, log: [] }); }
+        try { const r = await axios.post('/api/moves', { serverId: server.id, targetNodeId: target }); setMove({ id: r.data.moveId, step: 'stopping', progress: 0, log: [] }); }
         catch (err) { setError(errorText(err)); }
     }
     async function finish(removeSource) {

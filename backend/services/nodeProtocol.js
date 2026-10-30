@@ -2,7 +2,7 @@ const { randomUUID } = require('node:crypto');
 
 const ACTIONS = Object.freeze(['servers.list', 'host', 'catalog', 'server.status', 'console.read', 'power.start', 'power.stop',
     'console.command', 'files.read', 'files.write', 'backups.list', 'backups.create', 'backups.restore', 'backups.delete',
-    'tasks.list', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.run', 'settings.read', 'settings.write', 'config.write', 'launch.read', 'launch.preview', 'launch.write', 'update.chunk', 'update.stage', 'update.status',
+    'tasks.list', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.run', 'settings.read', 'settings.write', 'config.write', 'launch.read', 'launch.preview', 'launch.write', 'update.chunk', 'update.stage', 'update.status', 'move.export', 'move.read', 'move.cleanup', 'move.importChunk', 'move.import',
     'schedule.write', 'update', 'delete', 'cache.list', 'cache.status', 'cache.download', 'cache.cancel', 'cache.delete',
     'cache.copy', 'templates.list', 'templates.read', 'templates.write', 'templates.delete', 'install']);
 const MAX_PACKET_BYTES = 8 * 1024 * 1024;
