@@ -1,7 +1,7 @@
 # ServerForge checklist
 
 Goal (Daniel, #gamemanager 2026-10-30): a self-hosted game-server panel as close to TCAdmin as we can get.
-Owner: claude (codex out until 2026-11-28). Branch: `claude/overhaul`. **Nothing is pushed without Daniel's OK.**
+Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Branch: `claude/overhaul`. **Nothing is pushed without Daniel's OK.**
 
 ## Phase 0: security + UI (done 2026-10-30)
 - [x] Fixed public settings takeover, hard-coded JWT secret, admin/admin, user RCE via executable path, path traversal, open sockets/CORS
@@ -17,6 +17,9 @@ Owner: claude (codex out until 2026-11-28). Branch: `claude/overhaul`. **Nothing
 - [x] Live players/map query fixed (gamedig v5 import was wrong)
 - [x] `lib32gcc-s1` installed so Linux SteamCMD runs
 - [x] Crash-safe data files: atomic write + .bak restore (host crash 2026-10-30 left servers.json at 0 bytes)
+- [x] Scheduler 5-minute gap enforced for cron ranges/lists (codex finding)
+- [x] Revoking server access evicts live-log sockets (codex)
+- [ ] Deleting/demoting a user drops their live sockets (follow-up)
 - [ ] Real install verified end to end (Valheim: record lost in crash, re-add)
 - [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
 

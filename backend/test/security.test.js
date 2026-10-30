@@ -161,3 +161,29 @@ test('scheduled tasks: admins only, sane timetables, and they actually run', asy
     await api('POST', '/api/server/stop', { token: adminToken, body: { id: 'fake1' } });
     assert.equal((await api('DELETE', `/api/tasks/${t.data.id}`, { token: adminToken })).status, 200);
 });
+
+test('revoking server access stops live logs on an existing socket', async () => {
+    assert.equal((await api('PUT', '/api/server/fake1/access', { token: adminToken, body: { access: [{ username: 'player', perms: ['view'] }] } })).status, 200);
+    const socket = io(base, { auth: { token: userToken }, transports: ['websocket'], reconnection: false });
+    try {
+        await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
+        const nextLog = () => new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('expected live game output')), 3000);
+            socket.once('server-log-fake1', () => { clearTimeout(timer); resolve(); });
+        });
+        socket.emit('watch', 'fake1');
+        const first = nextLog();
+        assert.equal((await api('POST', '/api/server/start', { token: adminToken, body: { id: 'fake1' } })).status, 200);
+        await first;
+        assert.equal((await api('PUT', '/api/server/fake1/access', { token: adminToken, body: { access: [] } })).status, 200);
+        let leaked = false;
+        socket.on('server-log-fake1', () => { leaked = true; });
+        socket.emit('watch', 'fake1'); // Rejoining after revocation must also fail.
+        await new Promise(resolve => setTimeout(resolve, 1300));
+        assert.equal(leaked, false, 'revoked user still receives live logs');
+        assert.equal((await api('GET', '/api/server/fake1/status', { token: userToken })).status, 403);
+    } finally {
+        socket.close();
+        await api('POST', '/api/server/stop', { token: adminToken, body: { id: 'fake1' } });
+    }
+});

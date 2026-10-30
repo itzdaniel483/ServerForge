@@ -14,6 +14,7 @@ flowchart LR
         ROUTES --> BK[backupService]
         ROUTES --> LOG[auditLog]
         IO[Socket.IO]
+        ROUTES -- "Access change: evict revoked viewers" --> IO
         PM -- logs, status, stats --> IO
     end
     ROUTES --> STEAM[SteamCMD] --> DISK[(SERVERS_ROOT<br/>one folder per server)]
@@ -28,6 +29,7 @@ flowchart LR
 **Safety rules:**
 - Only admins can install, change launch lines or settings, write files, or manage tasks and access.
 - Users only see the servers they were given, with the permissions chosen in the Access tab.
+- Saving server access also removes revoked viewers from existing Socket.IO rooms. The `watch` handler checks access again before joining.
 - Every change is written to the activity log.
 
 **State:** `DATA_DIR` holds `users.json`, `servers.json`, `tasks.json`, `activity.jsonl`, `jwt-secret` and `initial-admin-password`. All are owner-only files.

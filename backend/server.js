@@ -266,6 +266,11 @@ app.put('/api/server/:id/access', requireAdmin, async (req, res) => {
     const list = access.cleanAccess(req.body?.access, users);
     if (!list) return res.status(400).json({ error: 'Pick existing users and valid permissions' });
     const updated = await serverStore.update(srv.id, { access: list });
+    // Room membership outlives HTTP requests: revoke existing live subscriptions too.
+    const room = `srv:${srv.id}`;
+    for (const socket of io.sockets.sockets.values()) {
+        if (socket.rooms.has(room) && !access.can(socket.data.user, updated, 'view')) socket.leave(room);
+    }
     audit(req, 'access', srv, list.map(a => `${a.username}:${a.perms.join('+')}`).join(', ') || 'none');
     res.json({ success: true, access: updated.access });
 });
