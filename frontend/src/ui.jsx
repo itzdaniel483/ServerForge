@@ -30,6 +30,7 @@ const STATUS = {
     running: ['Online', 'bg-go-500/15 text-go-300 ring-go-500/40', 'bg-go-400 shadow-[0_0_10px_2px_rgba(74,222,128,.7)] animate-pulse'],
     installing: ['Installing', 'bg-accent-500/15 text-accent-200 ring-accent-400/40', 'bg-accent-400 animate-pulse'],
     failed: ['Install failed', 'bg-stop-500/15 text-stop-300 ring-stop-500/40', 'bg-stop-400'],
+    nodeoffline: ['Node offline', 'bg-gray-950/70 text-gray-300 ring-white/15', 'bg-stop-400'],
 };
 
 export function Status({ status }) {

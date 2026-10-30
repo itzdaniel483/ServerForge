@@ -15,6 +15,8 @@ import ActivityLog from './ActivityLog';
 import { getSocket, errorText } from '../api';
 import { Button, Card, Status, Stat, Notice, GameArt } from '../ui';
 import { themeColor } from '../theme';
+import { NodeBadge } from '../nodes';
+import { can, isRemote, nodeOffline } from '../nodeUtils';
 
 // Server page (claude, UI v2 2026-10-30): game-art hero with address and power buttons, live
 // meters, pill tabs; the console fills the rest of the screen. Admin-only tabs are hidden from users.
@@ -32,7 +34,9 @@ function ServerControl({ server, isAdmin, onDeleted }) {
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
     const id = server.id;
-    const address = `${window.location.hostname}:${server.port || 27015}`;
+    // A server on another machine is joined at that machine's address, not this panel's.
+    const address = `${(isRemote(server) && server.nodeHost) || window.location.hostname}:${server.port || 27015}`;
+    const offline = nodeOffline(server);
 
     // Page-wide: stay in this server's room (and rejoin after a reconnect) on every tab, so the hero
     // stats keep updating and tabs like Updates still get their completion events.
@@ -138,16 +142,22 @@ function ServerControl({ server, isAdmin, onDeleted }) {
         navigator.clipboard?.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
     }
 
-    const on = status === 'running';
+    const on = status === 'running' && !offline;
     const perms = server.perms || [];
-    const may = p => isAdmin || perms.includes(p);
+    // User permission AND what the server's machine supports (local servers support everything).
+    const NODE_ACTION = { power: 'power', console: 'console.command', files: 'files.read', backups: 'backups' };
+    const may = p => (isAdmin || perms.includes(p)) && can(server, NODE_ACTION[p]);
+    const admin = action => isAdmin && can(server, action);
     const tabs = [
         { id: 'console', label: 'Console', icon: TerminalIcon },
         ...(may('files') ? [{ id: 'files', label: 'Files', icon: FolderOpen }] : []),
-        ...(isAdmin ? [{ id: 'config', label: 'Settings', icon: SlidersHorizontal }] : []),
-        { id: 'tasks', label: 'Schedule', icon: CalendarClock },
+        ...(admin('settings') ? [{ id: 'config', label: 'Settings', icon: SlidersHorizontal }] : []),
+        ...(can(server, 'tasks') ? [{ id: 'tasks', label: 'Schedule', icon: CalendarClock }] : []),
         ...(may('backups') ? [{ id: 'backups', label: 'Backups', icon: Archive }] : []),
-        ...(isAdmin ? [{ id: 'updates', label: 'Updates', icon: RefreshCw }, { id: 'plugins', label: 'Plugins', icon: Package }, { id: 'access', label: 'Access', icon: Users }, { id: 'activity', label: 'Activity', icon: History }] : []),
+        ...(admin('update') ? [{ id: 'updates', label: 'Updates', icon: RefreshCw }] : []),
+        ...(admin('files.write') ? [{ id: 'plugins', label: 'Plugins', icon: Package }] : []),
+        // Access rules and the activity log live on this panel, so they work for any machine.
+        ...(isAdmin ? [{ id: 'access', label: 'Access', icon: Users }, { id: 'activity', label: 'Activity', icon: History }] : []),
     ];
 
     const cpu = Number(stats.cpu || 0);
@@ -160,10 +170,11 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                         <div className="min-w-0 mr-auto">
                             <div className="flex items-center gap-3 flex-wrap">
                                 <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white truncate drop-shadow-lg">{server.name}</h1>
-                                <Status status={status} />
+                                <Status status={offline ? 'nodeoffline' : status} />
                             </div>
                             <div className="mt-2.5 flex items-center gap-3 flex-wrap text-sm">
                                 <span className="font-semibold text-gray-200">{server.game}</span>
+                                {isRemote(server) && <NodeBadge s={server} />}
                                 <button onClick={copyAddress} className="inline-flex items-center gap-2 h-8 px-3 rounded-lg bg-gray-950/70 backdrop-blur ring-1 ring-white/15 font-mono text-gray-100 hover:ring-accent-400" title="Copy address">
                                     {address}<Copy size={14} className="text-gray-400" />{copied && <span className="font-sans text-go-300">Copied</span>}
                                 </button>
@@ -178,12 +189,13 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                             ) : (
                                 <Button variant="go" size="lg" onClick={() => power(['start'])}><Play size={18} />Start</Button>
                             )}
-                            {isAdmin && <Button variant="ghost" size="lg" className="backdrop-blur" onClick={remove} title="Delete server" aria-label="Delete server"><Trash2 size={18} /></Button>}
+                            {admin('delete') && <Button variant="ghost" size="lg" className="backdrop-blur" onClick={remove} title="Delete server" aria-label="Delete server"><Trash2 size={18} /></Button>}
                         </div>
                     </div>
                 </GameArt>
             </Card>
 
+            {offline && <Notice>{server.nodeName || 'This server\'s machine'} is offline. Its controls come back when it reconnects.</Notice>}
             {error && <Notice>{error}</Notice>}
             {server.installError && <Notice>{server.installError}</Notice>}
 

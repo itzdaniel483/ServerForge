@@ -30,4 +30,12 @@ export function signOut(notice) {
 // eslint-disable-next-line no-control-regex
 export const stripAnsi = text => String(text).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b/g, '');
 
-export const errorText = err => err?.response?.data?.error || err?.message || 'Something went wrong';
+// Remote-node failures carry a stable code; these get plain words. OUTCOME_UNKNOWN means a change may
+// or may not have happened, so it never suggests simply trying again (multi-node UI contract item 3).
+const NODE_ERRORS = {
+    NODE_OFFLINE: 'That machine is offline. Try again when it reconnects.',
+    NODE_UNKNOWN: 'That machine is no longer joined to this panel.',
+    ACTION_UNSUPPORTED: "That machine can't do this yet.",
+    OUTCOME_UNKNOWN: 'We lost contact while doing this. Check the server before trying again.',
+};
+export const errorText = err => NODE_ERRORS[err?.response?.data?.code] || err?.response?.data?.error || err?.message || 'Something went wrong';

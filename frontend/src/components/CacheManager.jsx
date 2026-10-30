@@ -1,11 +1,15 @@
 // Download cache (claude, UI v2 2026-10-30). Games come from the catalogue (only ones this host can
 // run). Each row shows its state from codex's cache API: progress while downloading, Cancel, and
 // Resume after a cancel, a failure or a panel restart (SteamCMD carries on from what's on disk).
+// With other machines joined, a picker chooses whose cache to manage: each machine keeps its own
+// (a Windows download can't feed a Linux install), so every call carries ?node= for remote ones.
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Download, Trash2, X, RotateCw, ChevronDown, HardDrive, Search } from 'lucide-react';
 import { Button, Card, Meter, Notice, GameArt } from '../ui';
 import { getSocket, errorText, stripAnsi } from '../api';
+import { OsIcon } from '../nodes';
+import { osLabel } from '../nodeUtils';
 
 const BUSY = ['downloading', 'cancelling', 'deleting'];
 const RESUMABLE = ['interrupted', 'cancelled', 'error'];
@@ -16,18 +20,24 @@ export default function CacheManager() {
     const [error, setError] = useState('');
     const [filter, setFilter] = useState('');
     const [pending, setPending] = useState({});
+    const [nodes, setNodes] = useState([]);
+    const [nodeId, setNodeId] = useState('local');
+    const q = nodeId === 'local' ? '' : `?node=${encodeURIComponent(nodeId)}`;
+
+    useEffect(() => { axios.get('/api/nodes').then(r => setNodes(r.data)).catch(() => setNodes([])); }, []);
 
     const load = useCallback(async () => {
         try {
-            const r = await axios.get('/api/cache/list');
+            const r = await axios.get(`/api/cache/list${q}`);
             setCache(Object.fromEntries(r.data.cached.map(c => [String(c.appId), c])));
         } catch (err) {
             setError(errorText(err));
         }
-    }, []);
+    }, [q]);
 
     useEffect(() => {
-        axios.get('/api/games').then(r => setGames(r.data.games.filter(g => g.supported && g.appId))).catch(err => setError(errorText(err)));
+        setCache({}); setGames([]);
+        axios.get(`/api/games${q}`).then(r => setGames(r.data.games.filter(g => g.supported && g.appId))).catch(err => setError(errorText(err)));
         load();
         const t = setInterval(load, 2000);
         return () => clearInterval(t);
@@ -41,9 +51,11 @@ export default function CacheManager() {
             load();
         }
     }
-    const download = g => run(g.appId, () => axios.post(`/api/cache/download/${g.appId}`, { gameName: g.name }));
-    const cancel = g => run(g.appId, () => axios.post(`/api/cache/${g.appId}/cancel`));
-    const remove = g => window.confirm(`Delete the cached copy of ${g.name}?`) && run(g.appId, () => axios.delete(`/api/cache/${g.appId}`));
+    const download = g => run(g.appId, () => axios.post(`/api/cache/download/${g.appId}${q}`, { gameName: g.name }));
+    const cancel = g => run(g.appId, () => axios.post(`/api/cache/${g.appId}/cancel${q}`));
+    const remove = g => window.confirm(`Delete the cached copy of ${g.name}?`) && run(g.appId, () => axios.delete(`/api/cache/${g.appId}${q}`));
+    // Only machines that are online and offer cache actions (this panel always does).
+    const usable = n => n.id === 'local' || (n.online && (n.actions || []).includes('cache'));
 
     const needle = filter.trim().toLowerCase();
     // Active and cached games first, then the rest by name.
@@ -65,9 +77,22 @@ export default function CacheManager() {
                         className="w-full h-11 pl-10 pr-4 rounded-xl bg-white/[.03] border border-white/[.08] text-white placeholder-gray-500 focus:outline-none focus:border-accent-400" />
                 </div>
             </div>
+            {nodes.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Machine">
+                    <span className="text-sm font-semibold text-gray-300 mr-1">Cache on</span>
+                    {nodes.map(n => (
+                        <button key={n.id} role="radio" aria-checked={nodeId === n.id} disabled={!usable(n)} onClick={() => setNodeId(n.id)}
+                            title={usable(n) ? '' : n.online ? "This machine can't manage a cache yet" : 'This machine is offline'}
+                            className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold ring-1 transition disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/20 text-white ring-accent-400' : 'bg-white/[.03] text-gray-300 ring-white/10 hover:text-white'}`}>
+                            <OsIcon os={n.os} size={15} />{n.id === 'local' ? 'This panel' : n.name}
+                            <span className="text-xs font-medium text-gray-400">{osLabel(n.os)}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
             {error && <Notice>{error}</Notice>}
             <div className="grid gap-3">
-                {shown.map(g => <CacheRow key={g.appId} game={g} entry={cache[g.appId]} pending={pending[g.appId]} onDownload={download} onCancel={cancel} onDelete={remove} />)}
+                {shown.map(g => <CacheRow key={`${nodeId}-${g.appId}`} game={g} entry={cache[g.appId]} pending={pending[g.appId]} onDownload={download} onCancel={cancel} onDelete={remove} />)}
                 {games.length > 0 && shown.length === 0 && <div className="text-gray-400 py-6">No games match.</div>}
             </div>
         </div>

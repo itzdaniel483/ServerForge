@@ -4,10 +4,13 @@ import { Download, Search, Check, Zap } from 'lucide-react';
 import { getSocket, errorText, stripAnsi } from '../api';
 import { Button, Card, Notice, PageHeader, GameArt, Meter } from '../ui';
 import { VarFields } from './VarFields';
+import { OsIcon } from '../nodes';
+import { osLabel } from '../nodeUtils';
 
 // Installer (claude, 2026-10-30). Games come from the server's catalogue (/api/games), with each
 // game's own settings (map, players, ports, world...). Games without a server for this OS are shown
-// but can't be picked.
+// but can't be picked. With other machines joined (multi-node phase 3) a machine picker comes first;
+// the catalogue is fetched for that machine, and a game that needs another OS offers to switch to it.
 export default function Installer({ onDone }) {
     const [catalog, setCatalog] = useState(null);
     const [game, setGame] = useState(null);
@@ -19,18 +22,28 @@ export default function Installer({ onDone }) {
     const [installing, setInstalling] = useState(false);
     const [logs, setLogs] = useState([]);
     const [result, setResult] = useState(null);
+    const [nodes, setNodes] = useState([]);
+    const [nodeId, setNodeId] = useState('local');
     const logRef = useRef(null);
+    const nodeQuery = nodeId === 'local' ? '' : `?node=${encodeURIComponent(nodeId)}`;
+    // A machine can take installs if it's this panel, or online and offering "install".
+    const installable = n => n.id === 'local' || (n.online && (n.actions || []).includes('install'));
 
     useEffect(() => {
-        axios.get('/api/games').then(r => setCatalog(r.data)).catch(err => setResult({ ok: false, text: errorText(err) }));
+        axios.get('/api/nodes').then(r => setNodes(r.data)).catch(() => setNodes([]));
     }, []);
+
+    useEffect(() => {
+        setCatalog(null); setGame(null); setResult(null);
+        axios.get(`/api/games${nodeQuery}`).then(r => setCatalog(r.data)).catch(err => setResult({ ok: false, text: errorText(err) }));
+    }, [nodeQuery]);
 
     useEffect(() => {
         if (!game) return;
         setUseCache(false);
         setVars(Object.fromEntries(game.vars.map(f => [f.key, f.default])));
-        axios.get(`/api/cache/status/${game.appId}`).then(r => setCache(r.data)).catch(() => setCache({}));
-    }, [game]);
+        axios.get(`/api/cache/status/${game.appId}${nodeQuery}`).then(r => setCache(r.data)).catch(() => setCache({}));
+    }, [game, nodeQuery]);
 
     useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, [logs]);
 
@@ -40,7 +53,7 @@ export default function Installer({ onDone }) {
         const onLog = d => setLogs(l => [...l.slice(-800), stripAnsi(d)]);
         socket.on('install-log', onLog);
         try {
-            await axios.post('/api/install', { gameId: game.id, vars, useCache });
+            await axios.post('/api/install', { gameId: game.id, vars, useCache, ...(nodeId === 'local' ? {} : { nodeId }) });
             setResult({ ok: true, text: `${vars.name} is installed.` });
         } catch (err) {
             setResult({ ok: false, text: errorText(err) });
@@ -50,7 +63,28 @@ export default function Installer({ onDone }) {
         }
     }
 
-    if (!catalog) return <div className="text-gray-400">{result?.text || 'Loading games…'}</div>;
+    const machine = nodes.find(n => n.id === nodeId) || { id: 'local', name: 'This panel' };
+    const machineName = nodeId === 'local' ? 'this panel' : machine.name;
+    const picker = nodes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Machine">
+            <span className="text-sm font-semibold text-gray-300 mr-1">Install on</span>
+            {nodes.map(n => {
+                const ok = installable(n);
+                return (
+                    <button key={n.id} role="radio" aria-checked={nodeId === n.id} disabled={installing || !ok} onClick={() => setNodeId(n.id)}
+                        title={ok ? '' : n.online ? "This machine can't install servers yet" : 'This machine is offline'}
+                        className={`inline-flex items-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold ring-1 transition disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/20 text-white ring-accent-400' : 'bg-white/[.03] text-gray-300 ring-white/10 hover:text-white'}`}>
+                        <OsIcon os={n.os} size={15} />{n.id === 'local' ? 'This panel' : n.name}
+                        <span className="text-xs font-medium text-gray-400">{osLabel(n.os)}{n.id !== 'local' && !n.online ? ' · offline' : ''}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+    // For a game this machine can't run: another installable machine with the right OS.
+    const otherMachine = g => nodes.find(n => n.id !== nodeId && installable(n) && g.platforms.includes(n.os));
+
+    if (!catalog) return <div className="space-y-6">{picker}<div className="text-gray-400">{result?.text || 'Loading games…'}</div></div>;
 
     // SteamCMD prints "progress: 42.17 (...)" while downloading; show the latest as a bar.
     const progress = (() => {
@@ -68,7 +102,8 @@ export default function Installer({ onDone }) {
 
     return (
         <div className="space-y-6">
-            <PageHeader title="Install a server" sub={`${catalog.games.filter(g => g.supported).length} games run on this ${os} host. Pick one, name it, install.`} />
+            <PageHeader title="Install a server" sub={`${catalog.games.filter(g => g.supported).length} games run on ${machineName} (${os}). Pick one, name it, install.`} />
+            {picker}
             <div className="grid lg:grid-cols-[1fr_420px] gap-6 items-start">
                 <div className="space-y-4">
                     <div className="flex flex-wrap gap-3">
@@ -86,6 +121,19 @@ export default function Installer({ onDone }) {
                     <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr))]">
                         {shown.map(g => {
                             const on = game?.id === g.id;
+                            const other = !g.supported && otherMachine(g);
+                            if (other) return (
+                                <button key={g.id} disabled={installing} onClick={() => setNodeId(other.id)} title={`Switch to ${other.name}`}
+                                    className="group text-left rounded-2xl overflow-hidden glass transition-all hover:ring-1 hover:ring-white/20 disabled:cursor-not-allowed">
+                                    <GameArt gameId={g.id} name={g.name} className="h-28" imgClassName="object-center grayscale opacity-60">
+                                        <div className="absolute bottom-2.5 left-3 right-3 font-extrabold text-white leading-snug drop-shadow">{g.name}</div>
+                                    </GameArt>
+                                    <div className="px-3 py-2.5 flex items-center gap-2 text-xs">
+                                        <span className="px-2 py-0.5 rounded-md bg-white/[.06] font-semibold text-gray-300">{g.category}</span>
+                                        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-200 truncate"><OsIcon os={other.os} size={12} />Install on {other.name}</span>
+                                    </div>
+                                </button>
+                            );
                             return (
                                 <button key={g.id} disabled={installing || !g.supported} onClick={() => setGame(g)} aria-pressed={on}
                                     title={g.supported ? '' : `No ${os} server for this game`}
@@ -115,7 +163,7 @@ export default function Installer({ onDone }) {
                         <>
                         <GameArt gameId={game.id} name={game.name} className="h-36">
                             <div className="absolute bottom-3 left-5 right-5">
-                                <div className="text-xs font-bold uppercase tracking-wider text-accent-200">New server</div>
+                                <div className="text-xs font-bold uppercase tracking-wider text-accent-200">New server{nodeId !== 'local' ? ` on ${machine.name}` : ''}</div>
                                 <div className="text-2xl font-black text-white drop-shadow">{game.name}</div>
                             </div>
                         </GameArt>
