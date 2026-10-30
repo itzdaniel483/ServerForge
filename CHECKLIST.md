@@ -78,8 +78,10 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
   - [x] Setup.cmd/Uninstall.cmd/setup.ps1 (claude; parses on pwsh 7.6, ScriptAnalyzer clean apart from Write-Host style)
   - [x] scripts/build-windows-node.sh: bundled Node v22.23.3 win-x64 (SHA-256 checked), prod modules, frontend; draft zip 38 MB, no secrets
   - [x] Nodes page "Add node" explains the Windows Setup; docs/MULTI-NODE.md phase 4 diagram
-  - [ ] codex: service/Install-/Uninstall-ServerForgeService.ps1, `pair --until-approved` + FINGERPRINT line, Windows process/path/RCON fixes
-  - [ ] Final build to Outbox + Daniel's VM test (step list) + UFW rule for the VM IP on 3231 (claude)
+  - [x] Service scripts (WinSW pinned, LocalService, LAN-only game-port rule), `pair --until-approved`, Windows taskkill /T: claude took these over while codex was at its usage limit (af181b9); tested pair flag against the live hub
+  - [ ] codex review of af181b9 when back; open notes: startup `srcds` kill-all on Windows, Windows disk metrics, RCON on Windows
+  - [x] Final zip in console Outbox (ServerForge-Node-Setup.zip + .sha256), step list sent to Daniel
+  - [ ] Daniel: VM IP → UFW 3231 rule (claude); VM test; fix whatever it finds
 
 ## UI v3 (Daniel 2026-10-30: "too bubble like… not like an actual interface")
 - [x] Flat kit (radii 2-6px, 1px borders, no glows/gradients, 14px root), left sidebar + breadcrumb bar
