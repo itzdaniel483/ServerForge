@@ -28,6 +28,9 @@ function Register-SfService($id, $description, $arguments, [hashtable]$envVars, 
         Start-Sleep -Seconds 2
     }
     Copy-Item $WinSW $exe -Force
+    Start-Sleep -Milliseconds 500
+    # Antivirus sometimes removes a freshly copied service wrapper; say so plainly instead of 'not recognized'.
+    if (-not (Test-Path $exe)) { throw "$exe disappeared right after it was copied. Windows Security (or other antivirus) probably removed it: open Windows Security > Virus & threat protection > Protection history, allow it, then run Setup again." }
     $envXml = ($envVars.GetEnumerator() | Sort-Object Name | ForEach-Object { "  <env name=`"$($_.Name)`" value=`"$(Esc $_.Value)`" />" }) -join "`r`n"
     $dependXml = if ($depends) { "  <depend>$depends</depend>" } else { '' }
     @"
