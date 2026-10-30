@@ -38,7 +38,7 @@ async function connectPinned(hubUrl, fingerprint) {
 }
 
 class NodeClient extends EventEmitter {
-    constructor({ dataDir, name = os.hostname(), platform = process.platform, reconnectDelay = 5000 } = {}) {
+    constructor({ dataDir, name = os.hostname(), platform = process.platform, reconnectDelay = 5000, runtime = null } = {}) {
         super();
         this.file = path.join(dataDir || process.env.NODE_DATA_DIR || path.join(__dirname, '..', 'node-data'), 'node-identity.json');
         if (fs.existsSync(this.file) || fs.existsSync(this.file + '.bak')) {
@@ -60,6 +60,8 @@ class NodeClient extends EventEmitter {
         this.stopped = true;
         this.socket = null;
         this.timer = null;
+        this.runtime = runtime;
+        this.runtimeCleanup = null;
     }
     save() { writeJsonSync(this.file, this.identity); }
     async pair(bundle) {
@@ -91,6 +93,7 @@ class NodeClient extends EventEmitter {
         });
         ws.on('message', raw => {
             try {
+                if (ws.nodeDecoder) { ws.nodeDecoder.accept(raw); return; }
                 const msg = JSON.parse(raw.toString());
                 if (msg.type === 'challenge') {
                     if (this.identity.nodeId && msg.identityId !== this.identity.nodeId) throw new Error('Node challenge ID mismatch');
@@ -102,13 +105,19 @@ class NodeClient extends EventEmitter {
                     if (msg.hubId !== this.identity.hubId || typeof msg.nodeId !== 'string') throw new Error('Invalid approval');
                     this.identity.nodeId = msg.nodeId;
                     this.save();
-                    this.emit('online', { nodeId: msg.nodeId, capabilities: [] });
+                    if (this.runtime) this.attachRuntime(ws);
+                    this.emit('online', { nodeId: msg.nodeId, capabilities: this.runtime?.capabilities || [] });
                 } else if (msg.type === 'error') this.emit('failure', new Error(msg.error || msg.code || 'Node connection refused'));
                 // No RPC dispatcher exists in Phase 1.
             } catch (err) { this.emit('failure', err); ws.close(1008); }
         });
         ws.on('error', err => this.emit('failure', err));
         ws.on('close', () => {
+            const cleanup = ws.nodeRuntimeCleanup;
+            cleanup?.();
+            if (this.runtimeCleanup === cleanup) this.runtimeCleanup = null;
+            if (this.socket !== ws) return;
+            this.socket = null;
             this.emit('offline');
             if (!this.stopped && this.identity.nodeId) {
                 this.timer = setTimeout(() => this.connect().catch(err => { this.emit('failure', err); this.scheduleReconnect(); }), this.reconnectDelay);
@@ -118,7 +127,57 @@ class NodeClient extends EventEmitter {
     scheduleReconnect() {
         if (!this.stopped) this.timer = setTimeout(() => this.connect().catch(err => { this.emit('failure', err); this.scheduleReconnect(); }), this.reconnectDelay);
     }
-    stop() { this.stopped = true; clearTimeout(this.timer); this.socket?.terminate(); }
+    attachRuntime(ws) {
+        this.runtimeCleanup?.();
+        const { sendPacket, createDecoder } = require('./nodeProtocol');
+        const runtime = this.runtime;
+        let stopped = false, snapshotInFlight = false, snapshotsAgain = false;
+        const send = packet => { if (!stopped && ws.readyState === WebSocket.OPEN) sendPacket(ws, packet); };
+        const refresh = async () => {
+            if (stopped) return;
+            if (snapshotInFlight) { snapshotsAgain = true; return; }
+            snapshotInFlight = true;
+            try { send({ type: 'snapshot', data: await runtime.snapshot() }); }
+            catch (err) { if (!stopped) this.emit('failure', err); }
+            finally {
+                snapshotInFlight = false;
+                if (snapshotsAgain && !stopped) { snapshotsAgain = false; void refresh(); }
+            }
+        };
+        const decoder = createDecoder(packet => {
+            if (!packet || packet.type !== 'rpc.request') {
+                if (packet?.type === 'error') this.emit('failure', new Error(packet.code || 'Node connection refused'));
+                return;
+            }
+            if (typeof packet.id !== 'string' || !packet.id || packet.id.length > 128) { ws.close(1008, 'Invalid RPC identity'); return; }
+            Promise.resolve().then(() => runtime.handle(packet.action, packet.params, packet.actor, packet.operationId))
+                .catch(err => ({ status: err.status || 500, body: { error: err.message || 'Node action failed', code: err.code || 'NODE_ACTION_FAILED' } }))
+                .then(result => {
+                    try { send({ type: 'rpc.response', id: packet.id, status: result.status, body: result.body }); }
+                    catch (err) { this.emit('failure', err); ws.close(1009, 'Response limit'); }
+                    if (packet.operationId && result.status >= 200 && result.status < 300) void refresh();
+                });
+        }, { onError: err => { this.emit('failure', err); ws.close(1008, 'Invalid node packet'); } });
+        ws.nodeDecoder = decoder;
+        const unsubscribe = runtime.subscribe(event => {
+            try { send({ ...event, type: 'stream' }); } catch (err) { this.emit('failure', err); }
+        });
+        const timer = setInterval(() => { void refresh(); }, 5000);
+        timer.unref?.();
+        this.runtimeCleanup = () => {
+            if (stopped) return;
+            stopped = true; clearInterval(timer); unsubscribe?.(); decoder.close();
+            if (ws.nodeDecoder === decoder) ws.nodeDecoder = null;
+        };
+        ws.nodeRuntimeCleanup = this.runtimeCleanup;
+        send({ type: 'capabilities', actions: runtime.capabilities || [] });
+        void refresh();
+    }
+    stop() {
+        this.stopped = true; clearTimeout(this.timer);
+        this.runtimeCleanup?.(); this.runtimeCleanup = null;
+        this.socket?.terminate();
+    }
 }
 
 module.exports = { NodeClient, connectPinned, normalizePin };

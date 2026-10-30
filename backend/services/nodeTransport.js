@@ -1,9 +1,16 @@
-// Phase 1 node endpoint: identity/pairing only. Browser sessions and node keys never mix.
+// Authenticated node link. Browser sessions and node keys never mix.
 const https = require('node:https');
+const { EventEmitter } = require('node:events');
 const { randomUUID, X509Certificate } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
+const { ACTIONS, sendPacket, createDecoder } = require('./nodeProtocol');
 
 const NODE_PATH = '/node/v1/connect';
+const allowedActions = new Set(ACTIONS);
+const readActions = new Set(['servers.list', 'host', 'catalog', 'server.status', 'console.read', 'files.read', 'backups.list',
+    'tasks.list', 'settings.read', 'cache.list', 'cache.status', 'templates.list', 'templates.read']);
+const streamEvents = new Set(['server-log', 'server-status', 'server-stats', 'server-query', 'install-log', 'cache-download', 'update-log', 'update-complete']);
+const rpcError = (message, status, code) => Object.assign(new Error(message), { status, code });
 
 async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key, cert }) {
     if (!registry || !key || !cert) throw new Error('Node transport requires registry and TLS key/certificate');
@@ -19,11 +26,21 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
     const connections = new Set();
     const links = new Map();
     const statuses = new Map();
+    const snapshots = new Map();
+    const events = new EventEmitter();
     const ipAttempts = new Map();
     const unauthByIp = new Map();
     let unauthCount = 0, closing = false;
 
-    const send = (ws, value) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value)); };
+    const send = (ws, value) => { if (ws.readyState === WebSocket.OPEN) sendPacket(ws, value); };
+    const failPending = state => {
+        for (const request of state.pending.values()) {
+            clearTimeout(request.timer);
+            request.reject(rpcError(request.mutating ? 'Node disconnected; mutation outcome is unknown' : 'Node is offline', 503,
+                request.mutating ? 'OUTCOME_UNKNOWN' : 'NODE_OFFLINE'));
+        }
+        state.pending.clear();
+    };
     const releaseSlot = state => {
         if (!state.counted) return;
         state.counted = false;
@@ -47,7 +64,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
         releaseSlot(state);
         links.set(nodeId, state);
         markSeen(state);
-        if (previous && previous !== state) { previous.stage = 'replaced'; previous.ws.close(4001, 'Replaced by a new connection'); }
+        if (previous && previous !== state) { previous.stage = 'replaced'; failPending(previous); previous.decoder?.close(); previous.ws.close(4001, 'Replaced by a new connection'); }
         send(state.ws, { type: 'approved', nodeId, hubId: state.hubId, capabilities: [] });
     };
     const approved = ({ candidateId, node }) => {
@@ -57,8 +74,11 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
     };
     const removed = ({ id }) => {
         const state = links.get(id);
+        snapshots.delete(id);
+        statuses.delete(id);
         if (state) {
-            statuses.delete(id);
+            failPending(state);
+            state.decoder?.close();
             links.delete(id);
             state.ws.terminate();
         }
@@ -81,7 +101,47 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
             ipAttempts.set(ip, { since: now, count: 1 });
         } else recent.count++;
         wss.handleUpgrade(req, socket, head, ws => {
-            const state = { ws, ip, counted: true, alive: true, stage: 'new', messages: 0, messageWindow: now, queue: Promise.resolve() };
+            const state = { ws, ip, counted: true, alive: true, stage: 'new', messages: 0, bytes: 0, messageWindow: now,
+                queue: Promise.resolve(), pending: new Map(), actions: new Set() };
+            state.decoder = createDecoder(msg => {
+                if (state.stage !== 'approved' || links.get(state.nodeId) !== state) return;
+                markSeen(state);
+                if (msg.type === 'ping') return send(ws, { type: 'pong' });
+                if (msg.type === 'capabilities') {
+                    if (!Array.isArray(msg.actions) || msg.actions.length > ACTIONS.length || msg.actions.some(action => !allowedActions.has(action))) throw new Error('Invalid node capabilities');
+                    state.actions = new Set(msg.actions);
+                    events.emit('capabilities', { nodeId: state.nodeId, actions: [...state.actions] });
+                    return;
+                }
+                if (msg.type === 'rpc.response') {
+                    if (typeof msg.id !== 'string' || msg.id.length > 128) throw new Error('Invalid RPC response');
+                    const request = state.pending.get(msg.id);
+                    if (!request) return; // Timed-out or previous-session responses never resolve a new request.
+                    if (!Number.isInteger(msg.status) || msg.status < 100 || msg.status > 599 || !Object.hasOwn(msg, 'body')) throw new Error('Invalid RPC response');
+                    clearTimeout(request.timer); state.pending.delete(msg.id);
+                    request.resolve({ status: msg.status, body: msg.body });
+                    return;
+                }
+                if (msg.type === 'snapshot') {
+                    const data = msg.data;
+                    if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.servers) || data.servers.length > 1000 ||
+                        !data.host || typeof data.host !== 'object' || Array.isArray(data.host) ||
+                        (data.catalog && (!Array.isArray(data.catalog.games) || data.catalog.games.length > 1000 || typeof data.catalog.platform !== 'string'))) throw new Error('Invalid node snapshot');
+                    snapshots.set(state.nodeId, structuredClone(data));
+                    events.emit('snapshot', { nodeId: state.nodeId, data: structuredClone(data) });
+                    return;
+                }
+                if (msg.type === 'stream') {
+                    const serverRequired = /^(server-|update-)/.test(msg.event);
+                    if (!streamEvents.has(msg.event) || (serverRequired && msg.serverId === undefined) ||
+                        (msg.serverId !== undefined && (typeof msg.serverId !== 'string' || !/^[\w.-]{1,128}$/.test(msg.serverId))) ||
+                        (msg.event === 'cache-download' && !/^\d{1,12}$/.test(String(msg.appId))) ||
+                        (msg.appId !== undefined && (typeof msg.appId !== 'string' || !/^\d{1,12}$/.test(msg.appId)))) throw new Error('Invalid node stream');
+                    events.emit('stream', { nodeId: state.nodeId, event: msg.event, serverId: msg.serverId, ...(msg.appId !== undefined ? { appId: msg.appId } : {}), data: msg.data });
+                    return;
+                }
+                send(ws, { type: 'error', code: 'ACTION_UNSUPPORTED', message: 'Unsupported node packet' });
+            }, { onError: () => ws.close(1008, 'Invalid packet assembly') });
             unauthCount++; unauthByIp.set(ip, (unauthByIp.get(ip) || 0) + 1);
             connections.add(state);
             armTimeout(state, 30_000);
@@ -89,6 +149,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
             ws.on('pong', () => { state.alive = true; markSeen(state); });
             ws.on('close', () => {
                 clearTimeout(state.timer); releaseSlot(state); connections.delete(state);
+                state.decoder.close(); failPending(state);
                 if (state.nodeId && links.get(state.nodeId) === state) {
                     links.delete(state.nodeId);
                     statuses.set(state.nodeId, { online: false, lastSeen: statuses.get(state.nodeId)?.lastSeen || null });
@@ -96,17 +157,16 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
             });
             ws.on('message', (bytes, binary) => {
                 if (binary) return ws.close(1003, 'JSON text required');
-                if (Date.now() - state.messageWindow >= 10_000) { state.messageWindow = Date.now(); state.messages = 0; }
-                if (++state.messages > 20) return ws.close(1008, 'Message limit');
+                if (Date.now() - state.messageWindow >= 10_000) { state.messageWindow = Date.now(); state.messages = 0; state.bytes = 0; }
+                state.bytes += bytes.length;
+                if (++state.messages > (state.stage === 'approved' ? 4096 : 20) || state.bytes > (state.stage === 'approved' ? 32 * 1024 * 1024 : 1024 * 1024)) return ws.close(1008, 'Message limit');
                 state.queue = state.queue.then(async () => {
                     if (ws.readyState !== WebSocket.OPEN) return;
                     let msg;
                     try { msg = JSON.parse(bytes.toString()); } catch { return ws.close(1007, 'Invalid JSON'); }
                     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return ws.close(1007, 'Invalid message');
                     if (state.stage === 'approved') {
-                        markSeen(state);
-                        if (msg.type === 'ping') return send(ws, { type: 'pong' });
-                        return send(ws, { type: 'error', code: 'ACTION_UNSUPPORTED', message: 'Node actions are not enabled' });
+                        return state.decoder.accept(bytes);
                     }
                     if (state.stage === 'new' && (msg.type === 'pair' || msg.type === 'hello')) {
                         let identity;
@@ -165,7 +225,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
         closing = true;
         clearInterval(heartbeat);
         registry.off('approved', approved); registry.off('removed', removed);
-        for (const state of connections) { clearTimeout(state.timer); state.ws.terminate(); }
+        for (const state of connections) { clearTimeout(state.timer); failPending(state); state.decoder.close(); state.ws.terminate(); }
         await new Promise(resolve => wss.close(resolve));
         await new Promise(resolve => server.close(resolve));
     };
@@ -176,12 +236,40 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
         });
     } catch (err) { await close(); throw err; }
     return {
-        server, close, fingerprint,
+        server, close, fingerprint, events,
+        getSnapshot(nodeId) { return snapshots.has(nodeId) ? structuredClone(snapshots.get(nodeId)) : null; },
+        getCapabilities(nodeId) { return [...(links.get(nodeId)?.actions || [])]; },
+        async request(nodeId, action, params, actor, { mutating = false, timeoutMs = 30000, operationId } = {}) {
+            if (!allowedActions.has(action)) throw rpcError('Unsupported node action', 501, 'ACTION_UNSUPPORTED');
+            const state = links.get(nodeId);
+            if (!state || state.stage !== 'approved' || state.ws.readyState !== WebSocket.OPEN) throw rpcError('Node is offline', 503, 'NODE_OFFLINE');
+            if (!state.actions.has(action)) throw rpcError('Node does not support this action', 501, 'ACTION_UNSUPPORTED');
+            if (state.pending.size >= 32) throw rpcError('Too many node requests', 429, 'NODE_BUSY');
+            if (!params || typeof params !== 'object' || Array.isArray(params) || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 1800000 ||
+                (operationId !== undefined && (typeof operationId !== 'string' || !/^[\w-]{1,128}$/.test(operationId)))) throw rpcError('Invalid node RPC request', 400, 'NODE_REQUEST_INVALID');
+            const username = typeof actor === 'string' ? actor : actor?.username;
+            if (typeof username !== 'string' || username.length < 1 || username.length > 128 || /[\x00-\x1f\x7f]/.test(username)) throw rpcError('Invalid RPC actor', 400, 'NODE_REQUEST_INVALID');
+            const actorIdentity = typeof actor === 'string' ? actor : { username, ...(typeof actor.id === 'string' ? { id: actor.id.slice(0, 128) } : {}), ...(typeof actor.role === 'string' ? { role: actor.role.slice(0, 32) } : {}) };
+            const id = randomUUID();
+            const changesState = mutating || !readActions.has(action);
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    state.pending.delete(id);
+                    reject(rpcError(changesState ? 'Node request timed out; mutation outcome is unknown' : 'Node request timed out', 504,
+                        changesState ? 'OUTCOME_UNKNOWN' : 'NODE_OFFLINE'));
+                }, timeoutMs);
+                timer.unref?.();
+                state.pending.set(id, { resolve, reject, timer, mutating: changesState });
+                try { sendPacket(state.ws, { type: 'rpc.request', id, action, params, actor: actorIdentity,
+                    ...(changesState ? { operationId: operationId || id } : operationId ? { operationId } : {}) }); }
+                catch (err) { clearTimeout(timer); state.pending.delete(id); reject(rpcError(err.message, 503, changesState ? 'OUTCOME_UNKNOWN' : 'NODE_OFFLINE')); }
+            });
+        },
         hubUrl: `wss://${host.includes(':') ? `[${host}]` : host}:${server.address().port}${NODE_PATH}`,
         listStatus() {
             const result = {};
             for (const node of registry.list()) result[node.id] = { online: false, lastSeen: null };
-            for (const [id, status] of statuses) result[id] = { ...status };
+            for (const [id, status] of statuses) result[id] = { ...status, actions: [...(links.get(id)?.actions || [])], ...(links.has(id) ? { nodeHost: links.get(id).ip } : {}) };
             return result;
         },
     };

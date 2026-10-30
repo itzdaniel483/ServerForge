@@ -168,6 +168,9 @@ const authMiddleware = async (req, res, next) => {
             const current = (await userStore.getUsers()).find(u => u.id === decoded.id);
             if (!current || (decoded.sessionVersion ?? 0) !== current.sessionVersion) return res.status(401).json({ error: 'Invalid token' });
             req.user = { id: current.id, username: current.username, role: current.role };
+            if (current.role === 'admin' && decoded.hubActor && typeof decoded.hubActor.username === 'string' && decoded.hubActor.username.length <= 128) {
+                req.hubActor = { id: String(decoded.hubActor.id || '').slice(0, 128), username: decoded.hubActor.username };
+            }
             next();
         } catch (err) {
             return res.status(401).json({ error: 'Invalid token' });

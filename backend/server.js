@@ -21,6 +21,9 @@ const access = require('./services/access');
 const hostMetrics = require('./services/hostMetrics');
 const { NodeRegistry } = require('./services/nodeRegistry');
 const nodeRegistry = new NodeRegistry();
+const { RemoteServers, splitRemoteId } = require('./services/remoteServers');
+const { createRemoteRouter, uiActions, nullHost } = require('./services/remoteRouter');
+const remoteServers = new RemoteServers();
 let nodeTransport = null;
 const nodeTransportReady = (async () => {
     if (!process.env.NODE_PORT) return;
@@ -29,13 +32,14 @@ const nodeTransportReady = (async () => {
     nodeTransport = await require('./services/nodeTransport').createNodeTransport({
         registry: nodeRegistry, host: process.env.NODE_HOST || '127.0.0.1', port: Number(process.env.NODE_PORT), key, cert,
     });
+    wireRemoteTransport(nodeTransport);
 })().catch(err => { console.error('Node listener disabled:', err.message); });
 const querySnapshot = require('./services/querySnapshot');
 const schedulerService = require('./services/schedulerService');
 const backupService = require('./services/backupService');
 const cacheService = require('./services/cacheService');
 const auditLog = require('./services/auditLog');
-const audit = (req, action, srv, detail) => auditLog.add({ user: req.user?.username || 'system', action, serverId: srv?.id || null, server: srv?.name || null, detail: detail || null });
+const audit = (req, action, srv, detail) => auditLog.add({ user: req.hubActor?.username || req.user?.username || 'system', action, serverId: srv?.id || null, server: srv?.name || null, detail: detail || null });
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
@@ -47,6 +51,35 @@ const io = new Server(server, {
 });
 io.use(socketAuth);
 userStore.on('identities-changed', users => require('./services/socketSessions').invalidateChangedUsers(io, users));
+nodeRegistry.on('removed', ({ id }) => {
+    try { remoteServers.removeNode(id); } catch (err) { console.error('Remote metadata cleanup failed:', err.message); }
+    for (const socket of io.sockets.sockets.values()) {
+        for (const room of socket.rooms) if (room.startsWith(`srv:${id}:`)) socket.leave(room);
+    }
+});
+
+function wireRemoteTransport(transport) {
+    transport.events.on('snapshot', ({ nodeId, data }) => {
+        try { remoteServers.sync(nodeId, data); } catch (err) { console.error('Remote snapshot persistence failed:', err.message); }
+    });
+    transport.events.on('stream', ({ nodeId, event, serverId, appId, data }) => {
+        if (event === 'install-log') return io.to('admins').emit(`install-log-${nodeId}`, String(data).slice(-16000));
+        if (event === 'cache-download' && /^\d{1,12}$/.test(String(appId))) return io.to('admins').emit(`cache-download-${nodeId}:${appId}`, String(data).slice(-16000));
+        const compositeId = `${nodeId}:${serverId}`;
+        if (!remoteServers.get(compositeId, nodeRegistry, transport)) return;
+        if (['server-log', 'update-log'].includes(event)) data = String(data).slice(-16000);
+        else if (event === 'server-status') {
+            if (!['running', 'stopped', 'failed', 'installing'].includes(data)) return;
+        } else if (event === 'server-stats') {
+            data = { cpu: Number.isFinite(data?.cpu) && data.cpu >= 0 ? data.cpu : 0, memory: Number.isFinite(data?.memory) && data.memory >= 0 ? data.memory : 0 };
+        } else if (event === 'server-query') {
+            data = { online: data?.online === true, players: Number.isInteger(data?.players) && data.players >= 0 ? data.players : null,
+                maxPlayers: Number.isInteger(data?.maxPlayers) && data.maxPlayers >= 0 ? data.maxPlayers : null, map: String(data?.map || '').slice(0, 128) };
+        } else if (event === 'update-complete') data = { success: data?.success === true, error: String(data?.error || '').slice(0, 2000) };
+        else return;
+        io.to(`srv:${compositeId}`).emit(`${event}-${compositeId}`, data);
+    });
+}
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -124,19 +157,8 @@ if (fs.existsSync(frontendPath)) {
 
 // Apply Auth Middleware (Only for API routes)
 app.use('/api', authMiddleware);
-// Phase 1 has no remote action router. Never silently run a remote selection locally.
-app.use('/api', (req, res, next) => {
-    const queryNode = req.query.node;
-    const bodyNode = req.body?.nodeId;
-    if ([queryNode, bodyNode].some(value => value !== undefined && typeof value !== 'string') ||
-        (queryNode !== undefined && bodyNode !== undefined && queryNode !== bodyNode)) {
-        return res.status(400).json({ error: 'Conflicting or invalid node selection', code: 'NODE_REQUEST_INVALID' });
-    }
-    const selected = queryNode ?? bodyNode;
-    if (selected === undefined || selected === 'local') return next();
-    if (!nodeRegistry.list().some(node => node.id === selected)) return res.status(404).json({ error: 'Unknown node', code: 'NODE_UNKNOWN' });
-    return res.status(501).json({ error: 'Remote actions are not available in this phase', code: 'ACTION_UNSUPPORTED' });
-});
+app.use('/api', createRemoteRouter({ registry: nodeRegistry, getTransport: () => nodeTransport, store: remoteServers, userStore, audit,
+    onAccessChanged: (id, srv) => { for (const socket of io.sockets.sockets.values()) if (socket.rooms.has(`srv:${id}`) && !access.can(socket.data.user, srv, 'view')) socket.leave(`srv:${id}`); } }));
 
 // Per-server permissions for non-admins (services/access.js). Admins pass straight through.
 app.use('/api/server', (req, res, next) => {
@@ -283,7 +305,8 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 
 app.get('/api/servers', (req, res) => {
     // Users only see servers they can access; secrets and host paths are for admins only.
-    const all = serverStore.getAll().map(s => ({ ...s, nodeId: 'local', nodeName: 'Local host', nodeOs: process.platform, nodeOnline: true, ...querySnapshot.get(s.id, processManager.getStatus(s.id) === 'running') }));
+    const all = [...serverStore.getAll().map(s => ({ ...s, nodeId: 'local', nodeName: 'Local host', nodeOs: process.platform, nodeOnline: true, ...querySnapshot.get(s.id, processManager.getStatus(s.id) === 'running') })),
+        ...remoteServers.list(nodeRegistry, nodeTransport).map(s => ({ ...s, actions: uiActions(nodeTransport?.getCapabilities(s.nodeId) || []) }))];
     if (req.user?.role === 'admin') return res.json(all.map(s => ({ ...s, perms: access.PERMS })));
     res.json(all.filter(s => access.can(req.user, s, 'view')).map(({ rconPassword, path: _p, env, access: _a, vars, ...s }) => ({ ...s, perms: access.permsFor(req.user, { ...s, access: _a }) })));
 });
@@ -299,7 +322,11 @@ const nodeError = (res, err) => res.status(err.status || 400).json({ error: err.
 app.get('/api/nodes', requireAdmin, async (_req, res) => {
     const statuses = nodeTransport?.listStatus() || {};
     res.json([{ id: 'local', name: 'Local host', os: process.platform, online: true, lastSeen: new Date().toISOString(), version: '1', host: await hostMetrics.snapshot(), actions: [] },
-        ...nodeRegistry.list().map(node => ({ ...node, ...(statuses[node.id] || { online: false, lastSeen: null }), host: { cpuPercent: null, memory: { used: null, total: null }, disk: { used: null, total: null } }, actions: [] }))]);
+        ...nodeRegistry.list().map(node => {
+            const capabilities = nodeTransport?.getCapabilities(node.id) || [];
+            return { ...node, ...(statuses[node.id] || { online: false, lastSeen: null }), host: statuses[node.id]?.online ? nodeTransport?.getSnapshot(node.id)?.host || nullHost() : nullHost(),
+                actions: [...(capabilities.includes('install') ? ['install'] : []), ...(capabilities.includes('cache.list') && capabilities.includes('cache.download') ? ['cache'] : [])] };
+        })]);
 });
 app.get('/api/nodes/pending', requireAdmin, (_req, res) => res.json(nodeRegistry.listPending()));
 app.get('/api/nodes/config', requireAdmin, async (_req, res) => {
@@ -359,7 +386,7 @@ app.put('/api/server/:id/access', requireAdmin, async (req, res) => {
 
 // Install from the game catalogue (catalog/games.json). The client sends a catalogue id and the
 // game's settings; launch lines are built server-side, so the client never chooses a program to run.
-app.get('/api/games', (req, res) => res.json({ platform: catalog.platformKey(), games: catalog.list() }));
+app.get('/api/games', (req, res) => res.json({ nodeId: 'local', platform: catalog.platformKey(), games: catalog.list() }));
 
 app.post('/api/install', requireAdmin, async (req, res) => {
     const body = req.body || {};
@@ -1206,7 +1233,7 @@ io.on('connection', (socket) => {
     const user = socket.data.user;
     if (user?.role === 'admin') socket.join('admins');
     socket.on('watch', id => {
-        const srv = serverStore.get(String(id));
+        const srv = splitRemoteId(String(id)) ? remoteServers.get(String(id), nodeRegistry, nodeTransport) : serverStore.get(String(id));
         if (srv && access.can(user, srv, 'view')) socket.join(`srv:${srv.id}`);
     });
     socket.on('unwatch', id => socket.leave(`srv:${String(id)}`));
