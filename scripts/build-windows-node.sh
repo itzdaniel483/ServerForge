@@ -10,6 +10,10 @@
 set -euo pipefail
 
 NODE_VERSION="v22.23.3"            # same major/minor as the panel host; bump deliberately
+# WinSW (MIT) runs node.exe as a Windows service. GitHub publishes no checksum for this release, so the
+# hash was pinned on 2026-10-30 from two separate downloads; a changed file fails the build.
+WINSW_URL="https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe"
+WINSW_SHA256="b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/release"
 STAGE="$(mktemp -d)"
@@ -61,6 +65,9 @@ if [ -z "$(ls -A "$ROOT/installers/windows-node/service" 2>/dev/null)" ]; then
 else
     cp -r "$ROOT/installers/windows-node/service/." "$PKG/service/"
 fi
+[ -f "$CACHE/WinSW.NET461.exe" ] || curl -fsSL -o "$CACHE/WinSW.NET461.exe" "$WINSW_URL"
+echo "$WINSW_SHA256  $CACHE/WinSW.NET461.exe" | sha256sum -c --quiet - || { echo "WinSW checksum mismatch; deleting the download" >&2; rm -f "$CACHE/WinSW.NET461.exe"; exit 1; }
+cp "$CACHE/WinSW.NET461.exe" "$PKG/service/WinSW.exe"
 cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt} "$PKG/"
 
 # 5. Zip

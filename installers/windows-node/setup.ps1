@@ -9,7 +9,8 @@ param(
     [string]$DataDir = "$env:ProgramData\ServerForge",
     [string]$PairingFile,
     [switch]$Uninstall,
-    [switch]$Purge
+    [switch]$Purge,
+    [switch]$Repair          # pair again even though this PC already has a saved identity
 )
 
 $ErrorActionPreference = 'Stop'
@@ -75,6 +76,8 @@ Say '=====================================================' 'DarkCyan'
 
 if (-not (Test-Admin)) { Fail 'This needs administrator rights. Double-click Setup.cmd instead of setup.ps1.' }
 $Total = 6
+$Identity = Join-Path $DataDir 'node\node-identity.json'
+$AlreadyPaired = (Test-Path $Identity) -and -not $Repair
 
 # 1. Checks
 Step 1 $Total 'Checking this PC'
@@ -96,6 +99,9 @@ Start-Transcript -Path (Join-Path $DataDir 'setup.log') -Append | Out-Null
 
 # 2. Pairing file (asked early so a wrong or expired file stops setup before anything is installed)
 Step 2 $Total 'Pairing file'
+if ($AlreadyPaired) {
+    Say '  This PC is already paired; keeping it (updating the app only). Use -Repair to pair again.' 'Green'
+} else {
 Say '  On the panel: Nodes > Add node > Download file. Copy that file to this PC.'
 if (-not $PairingFile) {
     Add-Type -AssemblyName System.Windows.Forms
@@ -121,6 +127,7 @@ if (-not $reach.TcpTestSucceeded) {
     Fail "This PC can't reach the panel at ${hubHost}:$hubPort. Ask for this PC's IP ($myIp) to be allowed on the panel's firewall, then run Setup again."
 }
 Say "  Panel reachable from this PC." 'Green'
+}
 
 # 3. Files
 Step 3 $Total "Installing ServerForge to $InstallDir"
@@ -152,15 +159,21 @@ if (Test-Path $steamExe) { Say '  Already installed.' } else {
 
 # 5. Windows service (codex): local panel + node link, starts with Windows.
 Step 5 $Total 'Windows service'
-& (Join-Path $InstallDir 'service\Install-ServerForgeService.ps1') -AppDir (Join-Path $InstallDir 'app') -DataDir $DataDir -NodeExe $nodeExe
-if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { Fail "Service setup failed (code $LASTEXITCODE). See $DataDir\setup.log." }
-Say '  Service installed.' 'Green'
+try { & (Join-Path $InstallDir 'service\Install-ServerForgeService.ps1') -AppDir (Join-Path $InstallDir 'app') -DataDir $DataDir -NodeExe $nodeExe }
+catch { Fail "Service setup failed: $($_.Exception.Message)" }
+Say '  Services installed; the local panel is running (this PC only, 127.0.0.1).' 'Green'
+Say '  Firewall: game ports 2000-30000 allowed from your local network only.'
 
 # 6. Pair, then wait for the admin to approve on the panel
 Step 6 $Total 'Pairing with the panel'
+if ($AlreadyPaired) {
+    Restart-Service -Name $LinkService
+    Say '  Link restarted with the saved identity.' 'Green'
+} else {
 $out = Join-Path $env:TEMP "sf-pair-$PID.log"
 $env:NODE_DATA_DIR = Join-Path $DataDir 'node'
 $env:DATA_DIR = Join-Path $DataDir 'data'
+$env:NODE_LOCAL_API_URL = 'http://127.0.0.1:3230'
 $pair = Start-Process -FilePath $nodeExe -ArgumentList @("`"$(Join-Path $InstallDir 'app\backend\node-client.js')`"", 'pair', "`"$PairingFile`"", '--until-approved') `
     -RedirectStandardOutput $out -RedirectStandardError "$out.err" -NoNewWindow -PassThru
 $fingerprint = $null
@@ -192,7 +205,10 @@ if ($pair.ExitCode -ne 0) { Fail "Not approved: $pairLog" }
 
 # The pairing file is single-use and now spent; don't leave it lying around.
 Remove-Item $PairingFile -Force -ErrorAction SilentlyContinue
-Restart-Service -Name $LinkService -ErrorAction SilentlyContinue
+Restart-Service -Name $LinkService
+}
+Start-Sleep -Seconds 5
+if ((Get-Service -Name $LinkService).Status -ne 'Running') { Fail "The link service didn't stay running. See $DataDir\logs\ServerForgeNode.*.log" }
 
 Write-Host ''
 Say '=====================================================' 'DarkGreen'

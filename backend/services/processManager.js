@@ -34,7 +34,7 @@ class ProcessManager extends EventEmitter {
             cwd: cwd || path.dirname(executablePath),
             env: { ...process.env, ...env },
             detached: true,
-            windowsHide: false,               // keep console window visible
+            windowsHide: true,                // runs under a Windows service: no desktop to show a console on
             stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin, capture stdout/stderr
             // CREATE_NEW_CONSOLE flag (0x00000010) gives the process its own console on Windows
             creationFlags: 0x00000010
@@ -105,11 +105,15 @@ class ProcessManager extends EventEmitter {
         this.crashes.delete(id);
         try {
             // Started detached, so on Linux/macOS signal the whole process group (the game spawns children).
-            if (process.platform !== 'win32') process.kill(-entry.process.pid, 'SIGTERM');
-            else process.kill(entry.process.pid);
-            // Games that ignore SIGTERM get SIGKILL after 15 seconds.
+            // On Windows there are no process groups: taskkill /T ends the whole tree (claude, phase 4).
             const pid = entry.process.pid;
-            setTimeout(() => { try { process.kill(process.platform !== 'win32' ? -pid : pid, 'SIGKILL'); } catch { /* already gone */ } }, 15000).unref();
+            const winKill = force => spawn('taskkill', ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
+            if (process.platform !== 'win32') process.kill(-pid, 'SIGTERM');
+            else winKill(false);
+            // Games that ignore a polite stop are force-killed after 15 seconds.
+            setTimeout(() => {
+                try { if (process.platform !== 'win32') process.kill(-pid, 'SIGKILL'); else if (entry.process.exitCode === null) winKill(true); } catch { /* already gone */ }
+            }, 15000).unref();
         } catch (err) {
             console.error(`Failed to kill process ${id}:`, err);
         }
