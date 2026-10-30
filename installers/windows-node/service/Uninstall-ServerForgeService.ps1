@@ -12,3 +12,4 @@ foreach ($id in @('ServerForgeNode', 'ServerForge')) {
     }
 }
 Get-NetFirewallRule -DisplayName 'ServerForge game servers (LAN)' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Unregister-ScheduledTask -TaskName 'ServerForge Updater' -Confirm:$false -ErrorAction SilentlyContinue

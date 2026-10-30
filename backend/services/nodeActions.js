@@ -24,6 +24,8 @@ const definitions = {
     'settings.read': ['GET', '/api/server/:serverId/settings'], 'settings.write': ['PUT', '/api/server/:serverId/settings', ['vars', 'autoRestart']],
     'launch.read': ['GET', '/api/server/:serverId/launch'], 'launch.preview': ['POST', '/api/server/:serverId/launch/preview', ['template', 'customArgs']],
     'launch.write': ['PUT', '/api/server/:serverId/launch', ['template', 'customArgs']],
+    'update.chunk': ['POST', '/api/node-update/chunk', ['offset', 'data', 'total', 'sha256']], 'update.stage': ['POST', '/api/node-update/stage', ['manifest', 'signature']],
+    'update.status': ['GET', '/api/node-update/status'],
     'config.write': ['PUT', '/api/server/:serverId/config', ['executable', 'args']], 'schedule.write': ['POST', '/api/server/:serverId/schedule', ['schedule']],
     update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId'],
     install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port']],

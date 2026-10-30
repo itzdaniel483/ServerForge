@@ -353,6 +353,61 @@ app.post('/api/nodes/:id/approve', requireAdmin, (req, res) => {
     try { const node = nodeRegistry.approve(req.params.id, req.body || {}); audit(req, 'node-approve', null, node.id); res.json(nodeRegistry.list().find(item => item.id === node.id)); }
     catch (err) { nodeError(res, err); }
 });
+// ---- One-click node updates (claude, Daniel #gamemanager 3591/3595). See services/nodeUpdate.js. ----
+const nodeUpdate = require('./services/nodeUpdate');
+try { nodeUpdate.signingKey(); } catch (err) { console.error('Node update signing key unavailable:', err.message); }
+// Node side: the hub pushes the package in chunks over the link, then stages it for the SYSTEM updater.
+app.post('/api/node-update/chunk', requireAdmin, (req, res) => { try { res.json(nodeUpdate.receiveChunk(req.body || {})); } catch (err) { res.status(err.status || 400).json({ error: err.message, code: err.code }); } });
+app.post('/api/node-update/stage', requireAdmin, (req, res) => { try { res.json(nodeUpdate.stage(req.body || {})); } catch (err) { res.status(err.status || 400).json({ error: err.message, code: err.code }); } });
+app.get('/api/node-update/status', requireAdmin, (_req, res) => res.json(nodeUpdate.status()));
+// Hub side.
+const updateJobs = new Map();   // nodeId -> { step, sent, total, version, error, at }
+app.get('/api/nodes/update-info', requireAdmin, (_req, res) => {
+    try { const info = nodeUpdate.packageInfo(); res.json({ available: !!info, version: info?.manifest.version || null, size: info?.manifest.size || null }); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+app.get('/api/nodes/:id/update', requireAdmin, (req, res) => res.json(updateJobs.get(req.params.id) || { step: 'idle' }));
+app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
+    const id = req.params.id;
+    if (!nodeRegistry.list().some(n => n.id === id)) return res.status(404).json({ error: 'Unknown node', code: 'NODE_UNKNOWN' });
+    if (!nodeTransport?.listStatus()[id]?.online) return res.status(503).json({ error: 'That machine is offline', code: 'NODE_OFFLINE' });
+    const running = updateJobs.get(id);
+    if (running && ['sending', 'waiting'].includes(running.step)) return res.status(409).json({ error: 'An update is already in progress' });
+    let info;
+    try { info = nodeUpdate.packageInfo(); } catch (err) { return res.status(500).json({ error: err.message }); }
+    if (!info) return res.status(503).json({ error: 'No update package has been built on this panel yet' });
+    const job = { step: 'sending', sent: 0, total: info.manifest.size, version: info.manifest.version, error: null, at: Date.now() };
+    updateJobs.set(id, job);
+    audit(req, 'node-update', null, `${id} → ${info.manifest.version}`);
+    res.status(202).json(job);
+    const actor = { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role };
+    try {
+        const call = async (action, params) => {
+            const r = await nodeTransport.request(id, action, params, actor, { timeoutMs: 120000 });
+            if (r.status < 200 || r.status >= 300) throw new Error(r.body?.error || `${action} failed (${r.status})`);
+            return r.body;
+        };
+        for (let offset = 0; offset < info.data.length; offset += nodeUpdate.CHUNK) {
+            const part = info.data.subarray(offset, offset + nodeUpdate.CHUNK);
+            await call('update.chunk', { offset, data: part.toString('base64'), total: info.data.length, sha256: info.manifest.sha256 });
+            job.sent = offset + part.length;
+        }
+        await call('update.stage', { manifest: info.manifest, signature: info.signature });
+        job.step = 'waiting';
+        // The PC's updater checks every minute, swaps the app and restarts; the link comes back with the new version.
+        const deadline = Date.now() + 10 * 60000;
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 3000));
+            const st = nodeTransport.listStatus()[id];
+            if (st?.online && st.version === info.manifest.version) { job.step = 'done'; return; }
+            if (st?.online) {
+                try { const s = await call('update.status', {}); if (s?.result?.status === 'failed') { job.step = 'failed'; job.error = s.result.error || 'The update failed on the machine; it kept its old version.'; return; } } catch { /* restarting */ }
+            }
+        }
+        job.step = 'failed'; job.error = 'The machine did not come back with the new version within 10 minutes. Check it is running the latest Setup (with the updater).';
+    } catch (err) { job.step = 'failed'; job.error = err.message; }
+});
+
 app.delete('/api/nodes/:id', requireAdmin, (req, res) => {
     try { nodeRegistry.remove(req.params.id); audit(req, 'node-remove', null, req.params.id); res.json({ success: true }); }
     catch (err) { nodeError(res, err); }

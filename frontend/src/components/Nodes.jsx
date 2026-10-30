@@ -25,6 +25,9 @@ export default function Nodes() {
     const [error, setError] = useState('');
     const [enrolment, setEnrolment] = useState(null);
 
+    // One-click updates (Daniel #gamemanager 3591/3595): the version the panel can push to nodes.
+    const [updateInfo, setUpdateInfo] = useState(null);
+    useEffect(() => { axios.get('/api/nodes/update-info').then(r => setUpdateInfo(r.data)).catch(() => setUpdateInfo(null)); }, []);
     const load = useCallback(async () => {
         try {
             const [n, p, c] = await Promise.all([axios.get('/api/nodes'), axios.get('/api/nodes/pending'), axios.get('/api/nodes/config')]);
@@ -68,8 +71,8 @@ export default function Nodes() {
             <Card>
                 <div className="overflow-x-auto">
                     <table className="w-full text-[13px]">
-                        <thead><tr><th className="th w-28">Status</th><th className="th">Machine</th><th className="th hidden md:table-cell w-36">CPU</th><th className="th hidden md:table-cell w-36">RAM</th><th className="th hidden lg:table-cell w-36">Disk</th><th className="th hidden sm:table-cell">Connection</th><th className="th text-right">Actions</th></tr></thead>
-                        <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} />)}</tbody>
+                        <thead><tr><th className="th w-28">Status</th><th className="th">Machine</th><th className="th hidden md:table-cell w-36">CPU</th><th className="th hidden md:table-cell w-36">RAM</th><th className="th hidden lg:table-cell w-36">Disk</th><th className="th hidden sm:table-cell">Connection</th><th className="th hidden md:table-cell">Version</th><th className="th text-right">Actions</th></tr></thead>
+                        <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} latest={updateInfo?.version} onUpdated={load} />)}</tbody>
                     </table>
                 </div>
                 {remote.length === 0 && pending.length === 0 && !enrolment && (
@@ -80,7 +83,32 @@ export default function Nodes() {
     );
 }
 
-function NodeRow({ node, onRemove }) {
+function UpdateCell({ node, latest, onUpdated }) {
+    const [job, setJob] = useState(null);
+    const id = encodeURIComponent(node.id);
+    useEffect(() => { axios.get(`/api/nodes/${id}/update`).then(r => { if (['sending', 'waiting'].includes(r.data.step)) setJob(r.data); }).catch(() => {}); }, [id]);
+    useEffect(() => {
+        if (!job || !['sending', 'waiting'].includes(job.step)) return undefined;
+        const t = setInterval(() => axios.get(`/api/nodes/${id}/update`).then(r => { setJob(r.data); if (r.data.step === 'done') onUpdated?.(); }).catch(() => {}), 2000);
+        return () => clearInterval(t);
+    }, [job, id, onUpdated]);
+    async function start() {
+        if (!window.confirm(`Update ${node.name} to version ${latest}? Its ServerForge restarts (about a minute); game servers running on it are stopped and need starting again.`)) return;
+        try { setJob((await axios.post(`/api/nodes/${id}/update`)).data); } catch (err) { setJob({ step: 'failed', error: errorText(err) }); }
+    }
+    const behind = latest && node.version && node.version !== latest;
+    if (job?.step === 'sending') return <span className="text-xs text-accent-300">Sending {job.total ? Math.round((job.sent / job.total) * 100) : 0}%</span>;
+    if (job?.step === 'waiting') return <span className="text-xs text-accent-300">Installing on the PC… (up to a minute)</span>;
+    if (job?.step === 'done') return <span className="text-xs text-go-300">Updated ✓</span>;
+    return (
+        <span className="inline-flex items-center gap-2">
+            {job?.step === 'failed' && <span className="text-xs text-stop-300" title={job.error}>Update failed</span>}
+            {behind && node.online && <Button size="sm" variant="primary" onClick={start} title={`Update to ${latest}`}>Update</Button>}
+        </span>
+    );
+}
+
+function NodeRow({ node, onRemove, latest, onUpdated }) {
     const local = node.id === 'local';
     const h = node.host || {};
     const meters = [
@@ -108,7 +136,8 @@ function NodeRow({ node, onRemove }) {
                 </td>
             ))}
             <td className="td hidden sm:table-cell text-xs text-gray-400"><span className="inline-flex items-center gap-1.5"><Clock size={12} />{local ? 'Always connected' : node.online ? 'Connected' : `Last seen ${ago(node.lastSeen)}`}</span></td>
-            <td className="td text-right">{!local && <Button size="sm" variant="quiet" onClick={() => onRemove(node)} aria-label={`Remove ${node.name}`}><Trash2 size={13} />Remove</Button>}</td>
+            <td className="td hidden md:table-cell"><span className={`font-mono text-xs ${!local && latest && node.version && node.version !== latest ? 'text-warn-300' : 'text-gray-400'}`} title={!local && latest && node.version !== latest ? `Panel has ${latest}` : ''}>{local ? (latest || '—') : (node.version || '—')}</span></td>
+            <td className="td text-right"><span className="inline-flex items-center gap-2 justify-end">{!local && <UpdateCell node={node} latest={latest} onUpdated={onUpdated} />}{!local && <Button size="sm" variant="quiet" onClick={() => onRemove(node)} aria-label={`Remove ${node.name}`}><Trash2 size={13} />Remove</Button>}</span></td>
         </tr>
     );
 }

@@ -170,7 +170,7 @@ class NodeClient extends EventEmitter {
             if (ws.nodeDecoder === decoder) ws.nodeDecoder = null;
         };
         ws.nodeRuntimeCleanup = this.runtimeCleanup;
-        send({ type: 'capabilities', actions: runtime.capabilities || [] });
+        send({ type: 'capabilities', actions: runtime.capabilities || [], version: require('./nodeUpdate').currentVersion() });
         void refresh();
     }
     stop() {

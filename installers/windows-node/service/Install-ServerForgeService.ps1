@@ -97,6 +97,21 @@ foreach ($proto in @('TCP', 'UDP')) {
         -LocalPort '2000-30000' -RemoteAddress LocalSubnet -Profile Any | Out-Null
 }
 
+# One-click updates (Daniel 3591/3595): a SYSTEM task checks every minute for an update the panel has staged, and
+# applies it only if its signature matches update-key.pem here (Program Files: LocalService can't change it).
+$keyFile = Join-Path $SvcDir 'update-key.pem'
+$updater = Join-Path $SvcDir 'apply-update.js'
+if ((Test-Path $keyFile) -and (Test-Path $updater)) {
+    $installDir = Split-Path -Parent $AppDir
+    $taskArgs = "`"$updater`" --data `"$(Join-Path $DataDir 'data')`" --install `"$installDir`" --key `"$keyFile`""
+    $action = New-ScheduledTaskAction -Execute $NodeExe -Argument $taskArgs
+    $every = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $boot = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName 'ServerForge Updater' -Action $action -Trigger @($every, $boot) -Principal $principal -Settings $settings -Force | Out-Null
+}
+
 Start-Service -Name 'ServerForge'
 $ok = $false
 for ($i = 0; $i -lt 40 -and -not $ok; $i++) {

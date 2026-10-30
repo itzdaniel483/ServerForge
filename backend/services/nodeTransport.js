@@ -9,7 +9,7 @@ const { ACTIONS, sendPacket, createDecoder } = require('./nodeProtocol');
 const NODE_PATH = '/node/v1/connect';
 const allowedActions = new Set(ACTIONS);
 const readActions = new Set(['servers.list', 'host', 'catalog', 'server.status', 'console.read', 'files.read', 'backups.list',
-    'tasks.list', 'settings.read', 'launch.read', 'launch.preview', 'cache.list', 'cache.status', 'templates.list', 'templates.read']);
+    'tasks.list', 'settings.read', 'launch.read', 'launch.preview', 'update.status', 'cache.list', 'cache.status', 'templates.list', 'templates.read']);
 const streamEvents = new Set(['server-log', 'server-status', 'server-stats', 'server-query', 'install-log', 'cache-download', 'update-log', 'update-complete']);
 const rpcError = (message, status, code) => Object.assign(new Error(message), { status, code });
 
@@ -111,6 +111,8 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
                 if (msg.type === 'capabilities') {
                     if (!Array.isArray(msg.actions) || msg.actions.length > ACTIONS.length || msg.actions.some(action => !allowedActions.has(action))) throw new Error('Invalid node capabilities');
                     state.actions = new Set(msg.actions);
+                    // The node's app version (build hash), so the Nodes page can offer an update (claude).
+                    if (typeof msg.version === 'string' && /^[\w.-]{1,40}$/.test(msg.version)) { state.version = msg.version; const st = statuses.get(state.nodeId); if (st) st.version = msg.version; }
                     events.emit('capabilities', { nodeId: state.nodeId, actions: [...state.actions] });
                     return;
                 }
@@ -270,7 +272,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
         listStatus() {
             const result = {};
             for (const node of registry.list()) result[node.id] = { online: false, lastSeen: null };
-            for (const [id, status] of statuses) result[id] = { ...status, actions: [...(links.get(id)?.actions || [])], ...(links.has(id) ? { nodeHost: links.get(id).ip } : {}) };
+            for (const [id, status] of statuses) result[id] = { ...status, version: links.get(id)?.version ?? status.version ?? null, actions: [...(links.get(id)?.actions || [])], ...(links.has(id) ? { nodeHost: links.get(id).ip } : {}) };
             return result;
         },
     };

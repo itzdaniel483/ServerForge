@@ -70,6 +70,15 @@ echo "$WINSW_SHA256  $CACHE/WinSW.NET461.exe" | sha256sum -c --quiet - || { echo
 cp "$CACHE/WinSW.NET461.exe" "$PKG/service/WinSW.exe"
 cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt} "$PKG/"
 
+# 4a. Version stamp + update signing key (one-click updates, Daniel 3591/3595).
+VERSION="$(cd "$PKG/app" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
+echo "$VERSION" > "$PKG/app/VERSION"
+PUBKEY="${UPDATE_PUBKEY:-/var/lib/serverforge/data/update-signing-key.pub.pem}"
+if sudo -n test -f "$PUBKEY" 2>/dev/null; then sudo -n cat "$PUBKEY" > "$PKG/service/update-key.pem"
+elif [ -f "$PUBKEY" ]; then cp "$PUBKEY" "$PKG/service/update-key.pem"
+else echo "No panel update key at $PUBKEY (start the panel once to create it); this build can't receive one-click updates" >&2; fi
+say "Version $VERSION"
+
 # 4b. Every PowerShell script must parse (claude, 2026-10-30: a stray apostrophe once shipped a broken setup.ps1).
 PWSH="${PWSH:-$CACHE/pwsh/pwsh}"
 if [ -x "$PWSH" ]; then
@@ -95,6 +104,19 @@ with zipfile.ZipFile(out + '.part', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) 
 os.replace(out + '.part', out)
 PY
 ( cd "$OUT" && sha256sum ServerForge-Node-Setup.zip > ServerForge-Node-Setup.zip.sha256 )
+# App-only package the panel pushes to nodes ("Update" on the Nodes page).
+python3 - "$PKG" "$OUT/node-update.zip" <<'PY'
+import sys, os, zipfile
+pkg, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out + '.part', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    for base, _, files in os.walk(os.path.join(pkg, 'app')):
+        for f in sorted(files):
+            p = os.path.join(base, f)
+            z.write(p, os.path.relpath(p, pkg))
+os.replace(out + '.part', out)
+PY
+echo "$VERSION" > "$OUT/node-update.version"
+chmod 644 "$OUT/node-update.zip" "$OUT/node-update.version"
 say "Built $OUT/ServerForge-Node-Setup.zip ($(du -h "$OUT/ServerForge-Node-Setup.zip" | cut -f1)), sha256 $(cut -c1-16 "$OUT/ServerForge-Node-Setup.zip.sha256")..."
 
 if [ "${1:-}" = "--outbox" ]; then
