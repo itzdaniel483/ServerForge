@@ -4,6 +4,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const crypto = require('crypto');
+const { readJsonSync, writeJsonSync } = require('./jsonFile');
 const cron = require('node-cron');
 
 const FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'tasks.json');
@@ -18,15 +19,14 @@ class SchedulerService {
 
     init(runner) {
         this.runner = runner || this.runner;
-        try { this.tasks = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { this.tasks = []; }
+        this.tasks = readJsonSync(FILE, []);
         if (!Array.isArray(this.tasks)) this.tasks = [];
         for (const t of this.tasks) this.arm(t);
         console.log(`Scheduler: ${this.tasks.length} task(s) loaded`);
     }
 
     save() {
-        fs.ensureDirSync(path.dirname(FILE));
-        fs.writeFileSync(FILE, JSON.stringify(this.tasks, null, 1), { mode: 0o600 });
+        writeJsonSync(FILE, this.tasks, { indent: 1 });
     }
 
     arm(task) {

@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { readJson, writeJson, isCorruptWithoutBackup } = require('./jsonFile');
 const bcrypt = require('bcryptjs');
 const { randomUUID: uuidv4 } = require('crypto');
 
@@ -14,15 +15,10 @@ class UserStore {
     async init() {
         if (this.initialized) return;
 
-        await fs.ensureFile(DATA_FILE);
-        try {
-            const data = await fs.readFile(DATA_FILE, 'utf8');
-            if (data) {
-                this.users = JSON.parse(data);
-            }
-        } catch (err) {
-            console.error('Failed to load users:', err);
-        }
+        // Never replace a damaged users file with a fresh admin: that would wipe every account.
+        if (isCorruptWithoutBackup(DATA_FILE)) throw new Error(`${DATA_FILE} is corrupt and has no .bak; fix or remove it to continue`);
+        const data = await readJson(DATA_FILE, []);
+        this.users = Array.isArray(data) ? data : [];
 
         // First run: create 'admin' with ADMIN_PASSWORD, or a random password saved to data/initial-admin-password
         // (owner-only file). Never the old admin/admin default.
@@ -43,7 +39,7 @@ class UserStore {
     }
 
     async save() {
-        await fs.writeFile(DATA_FILE, JSON.stringify(this.users, null, 2), { mode: 0o600 });
+        await writeJson(DATA_FILE, this.users);
     }
 
     async addUser(username, password, role = 'user') {

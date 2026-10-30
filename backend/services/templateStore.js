@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { readJson, writeJson } = require('./jsonFile');
 
 const TEMPLATES_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'templates.json');
 
@@ -73,10 +74,8 @@ class TemplateStore {
     }
 
     async load() {
-        await fs.ensureFile(TEMPLATES_FILE);
         try {
-            const data = await fs.readFile(TEMPLATES_FILE, 'utf8');
-            this.templates = data ? JSON.parse(data) : {};
+            this.templates = await readJson(TEMPLATES_FILE, {});
 
             // Merge with defaults (don't overwrite custom templates)
             for (const [gameId, gameTemplates] of Object.entries(DEFAULT_TEMPLATES)) {
@@ -97,7 +96,7 @@ class TemplateStore {
     }
 
     async save() {
-        await fs.writeFile(TEMPLATES_FILE, JSON.stringify(this.templates, null, 2));
+        await writeJson(TEMPLATES_FILE, this.templates);
     }
 
     /**

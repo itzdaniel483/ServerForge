@@ -16,7 +16,8 @@ Owner: claude (codex out until 2026-11-28). Branch: `claude/overhaul`. **Nothing
 - [x] Crash auto-restart (3 tries in 10 min, then stops and logs it)
 - [x] Live players/map query fixed (gamedig v5 import was wrong)
 - [x] `lib32gcc-s1` installed so Linux SteamCMD runs
-- [ ] Real install verified end to end (Valheim in progress)
+- [x] Crash-safe data files: atomic write + .bak restore (host crash 2026-10-30 left servers.json at 0 bytes)
+- [ ] Real install verified end to end (Valheim: record lost in crash, re-add)
 - [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
 
 ## Phase 2: hosting features

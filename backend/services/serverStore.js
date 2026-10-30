@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { readJson, writeJson } = require('./jsonFile');
 
 const DATA_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'servers.json');
 
@@ -9,17 +10,12 @@ class ServerStore {
     }
 
     async load() {
-        await fs.ensureFile(DATA_FILE);
-        try {
-            const data = await fs.readFile(DATA_FILE, 'utf8');
-            this.servers = data ? JSON.parse(data) : [];
-        } catch (err) {
-            this.servers = [];
-        }
+        const data = await readJson(DATA_FILE, []);
+        this.servers = Array.isArray(data) ? data : [];
     }
 
     async save() {
-        await fs.writeFile(DATA_FILE, JSON.stringify(this.servers, null, 2));
+        await writeJson(DATA_FILE, this.servers);
     }
 
     async add(serverData) {

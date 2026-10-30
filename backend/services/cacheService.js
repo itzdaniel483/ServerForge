@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { spawn } = require('child_process');
 const steamcmd = require('./steamcmd');
+const { writeJson } = require('./jsonFile');
 
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '../..', 'cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
@@ -30,7 +31,7 @@ class CacheService {
     }
 
     async saveCache() {
-        await fs.writeFile(CACHE_FILE, JSON.stringify(this.cache, null, 2));
+        await writeJson(CACHE_FILE, this.cache);
     }
 
     async listCached() {
