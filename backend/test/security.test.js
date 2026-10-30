@@ -62,6 +62,16 @@ test.before(async () => {
 test.after(() => { child?.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 test('anonymous callers cannot read or change settings (was a full takeover)', async () => {
+    assert.equal((await api('GET', '/api/nodes')).status, 401);
+    assert.equal((await api('GET', '/api/nodes', { token: userToken })).status, 403);
+    const nodes = await api('GET', '/api/nodes', { token: adminToken });
+    assert.equal(nodes.status, 200);
+    assert.equal(nodes.data[0].id, 'local');
+    assert.deepEqual((await api('GET', '/api/nodes/pending', { token: adminToken })).data, []);
+    assert.equal((await api('POST', '/api/nodes/enrol', { token: adminToken })).data.code, 'NODE_LISTENER_DISABLED');
+    assert.equal((await api('GET', '/api/games?node=unknown', { token: adminToken })).data.code, 'NODE_UNKNOWN');
+    assert.equal((await api('POST', '/api/install?node=local', { token: adminToken, body: { nodeId: 'remote' } })).status, 400);
+    assert.equal((await api('GET', '/api/games?node=local&node=remote', { token: adminToken })).status, 400);
     assert.equal((await api('GET', '/api/host')).status, 401);
     assert.equal((await api('GET', '/api/art/valheim')).status, 401);
     assert.equal((await api('GET', '/api/art/not-a-game', { token: adminToken })).status, 404);

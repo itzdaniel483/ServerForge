@@ -148,3 +148,21 @@ The node listener runs inside the same `app-serverforge` service, so the server 
 ## Still open
 
 1. Which Windows PC will be the first node (its LAN IP, for the UFW rule)?
+
+## Phase 1 implementation and operation
+
+Implemented locally: `nodeRegistry` (hashed enrolments, Ed25519 proof, approval/revocation), `nodeTransport` (dedicated TLS listener, bounded handshakes and heartbeat), and the link-only `nodeClient`. No remote game-server action or RPC dispatcher exists yet; approved nodes report an empty action list. Existing local server IDs keep working and gain local node metadata. Conflicting query/body node selections are rejected before local execution.
+
+The listener stays disabled unless the existing panel service receives `NODE_PORT`, `NODE_TLS_KEY_FILE` and `NODE_TLS_CERT_FILE`. `NODE_HOST` defaults to loopback; set it to the intended LAN address for real nodes. Set `NODE_PUBLIC_URL` to the exact reachable `wss://<LAN-IP>:<node-port>/node/v1/connect` address. The certificate/key belong to this dedicated listener, not the existing HTTP panel. Store the key owner-only. Deployment must reserve an unused port and permit only approved node source IPs; do not publish the listener outside the LAN in this phase. The hub remains controlled by its existing server-console entry, with no separate hub daemon.
+
+One complete node setup flow (once the listener and intended PC are configured):
+
+1. On the admin Nodes page, create an enrolment and save its JSON bundle privately on the intended node. It contains the one-time code; never put it in chat, logs or command-line arguments.
+2. In that node's `backend` directory, set `NODE_DATA_DIR` to its private persistent identity folder and run `npm run node:pair -- /private/path/enrolment.json`. No inbound node port is opened. The terminal prints only its candidate ID and public-key fingerprint.
+3. Compare that fingerprint with the pending candidate on the hub, tick the confirmation and approve. Keep the process running to retain the link. Delete the consumed enrolment bundle.
+4. After a client restart, run `npm run node:run` with the same `NODE_DATA_DIR`. It reconnects with its saved private key and pinned hub identity. The client is link-only; Windows service packaging and console management on the remote PC remain Phase 4 work before routine deployment.
+5. Remove the node from the hub to revoke its key and immediately terminate its link. Pairing again requires a new code and receives a new node identity.
+
+Client identity and hub registry corruption fail closed; neither automatically restores an older trust database from `.bak`, which could resurrect revoked trust. Manual recovery must account for all revocations. Enrolment expiry uses epoch milliseconds. Management routes are admin-only and audited; enrolment responses use `Cache-Control: no-store`. Without configured listener, enrolment returns 503 `NODE_LISTENER_DISABLED`.
+
+Tests run with temporary identities and self-signed TLS certificates, including wrong pins, pending approval, captured-proof reuse, cross-connection proofs, expired codes, revocation, reconnect, oversized/binary frames, source limits, identity corruption and explicit rejection of unsupported remote selections. No real Windows game process has been controlled by this implementation; Windows runtime validation remains required.

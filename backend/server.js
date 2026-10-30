@@ -19,6 +19,17 @@ const crypto = require('crypto');
 const catalog = require('./services/catalog');
 const access = require('./services/access');
 const hostMetrics = require('./services/hostMetrics');
+const { NodeRegistry } = require('./services/nodeRegistry');
+const nodeRegistry = new NodeRegistry();
+let nodeTransport = null;
+const nodeTransportReady = (async () => {
+    if (!process.env.NODE_PORT) return;
+    const key = fs.readFileSync(process.env.NODE_TLS_KEY_FILE);
+    const cert = fs.readFileSync(process.env.NODE_TLS_CERT_FILE);
+    nodeTransport = await require('./services/nodeTransport').createNodeTransport({
+        registry: nodeRegistry, host: process.env.NODE_HOST || '127.0.0.1', port: Number(process.env.NODE_PORT), key, cert,
+    });
+})().catch(err => { console.error('Node listener disabled:', err.message); });
 const querySnapshot = require('./services/querySnapshot');
 const schedulerService = require('./services/schedulerService');
 const backupService = require('./services/backupService');
@@ -113,6 +124,19 @@ if (fs.existsSync(frontendPath)) {
 
 // Apply Auth Middleware (Only for API routes)
 app.use('/api', authMiddleware);
+// Phase 1 has no remote action router. Never silently run a remote selection locally.
+app.use('/api', (req, res, next) => {
+    const queryNode = req.query.node;
+    const bodyNode = req.body?.nodeId;
+    if ([queryNode, bodyNode].some(value => value !== undefined && typeof value !== 'string') ||
+        (queryNode !== undefined && bodyNode !== undefined && queryNode !== bodyNode)) {
+        return res.status(400).json({ error: 'Conflicting or invalid node selection', code: 'NODE_REQUEST_INVALID' });
+    }
+    const selected = queryNode ?? bodyNode;
+    if (selected === undefined || selected === 'local') return next();
+    if (!nodeRegistry.list().some(node => node.id === selected)) return res.status(404).json({ error: 'Unknown node', code: 'NODE_UNKNOWN' });
+    return res.status(501).json({ error: 'Remote actions are not available in this phase', code: 'ACTION_UNSUPPORTED' });
+});
 
 // Per-server permissions for non-admins (services/access.js). Admins pass straight through.
 app.use('/api/server', (req, res, next) => {
@@ -259,7 +283,7 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 
 app.get('/api/servers', (req, res) => {
     // Users only see servers they can access; secrets and host paths are for admins only.
-    const all = serverStore.getAll().map(s => ({ ...s, ...querySnapshot.get(s.id, processManager.getStatus(s.id) === 'running') }));
+    const all = serverStore.getAll().map(s => ({ ...s, nodeId: 'local', nodeName: 'Local host', nodeOs: process.platform, nodeOnline: true, ...querySnapshot.get(s.id, processManager.getStatus(s.id) === 'running') }));
     if (req.user?.role === 'admin') return res.json(all.map(s => ({ ...s, perms: access.PERMS })));
     res.json(all.filter(s => access.can(req.user, s, 'view')).map(({ rconPassword, path: _p, env, access: _a, vars, ...s }) => ({ ...s, perms: access.permsFor(req.user, { ...s, access: _a }) })));
 });
@@ -269,6 +293,41 @@ app.get('/api/host', async (req, res) => {
         return res.status(403).json({ error: 'Server access required' });
     }
     res.json(await hostMetrics.snapshot());
+});
+
+const nodeError = (res, err) => res.status(err.status || 400).json({ error: err.message, code: err.status === 404 ? 'NODE_UNKNOWN' : 'NODE_REQUEST_INVALID' });
+app.get('/api/nodes', requireAdmin, async (_req, res) => {
+    const statuses = nodeTransport?.listStatus() || {};
+    res.json([{ id: 'local', name: 'Local host', os: process.platform, online: true, lastSeen: new Date().toISOString(), version: '1', host: await hostMetrics.snapshot(), actions: [] },
+        ...nodeRegistry.list().map(node => ({ ...node, ...(statuses[node.id] || { online: false, lastSeen: null }), host: { cpuPercent: null, memory: { used: null, total: null }, disk: { used: null, total: null } }, actions: [] }))]);
+});
+app.get('/api/nodes/pending', requireAdmin, (_req, res) => res.json(nodeRegistry.listPending()));
+app.get('/api/nodes/config', requireAdmin, async (_req, res) => {
+    await nodeTransportReady;
+    res.json({ enabled: !!nodeTransport, hubUrl: process.env.NODE_PUBLIC_URL || nodeTransport?.hubUrl || null, hubFingerprint: nodeTransport?.fingerprint || null });
+});
+app.post('/api/nodes/enrol', requireAdmin, async (_req, res) => {
+    await nodeTransportReady;
+    if (!nodeTransport) return res.status(503).json({ error: 'Configure the dedicated TLS node listener first', code: 'NODE_LISTENER_DISABLED' });
+    try {
+        const bundle = nodeRegistry.createEnrolment({ hubUrl: process.env.NODE_PUBLIC_URL || nodeTransport.hubUrl, hubFingerprint: nodeTransport.fingerprint });
+        audit(req, 'node-enrol', null, bundle.codeId);
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(201).json(bundle);
+    }
+    catch (err) { nodeError(res, err); }
+});
+app.delete('/api/nodes/enrol/:codeId', requireAdmin, (req, res) => {
+    try { nodeRegistry.cancelEnrolment(req.params.codeId); audit(req, 'node-enrol-cancel', null, req.params.codeId); res.json({ success: true }); }
+    catch (err) { nodeError(res, err); }
+});
+app.post('/api/nodes/:id/approve', requireAdmin, (req, res) => {
+    try { const node = nodeRegistry.approve(req.params.id, req.body || {}); audit(req, 'node-approve', null, node.id); res.json(nodeRegistry.list().find(item => item.id === node.id)); }
+    catch (err) { nodeError(res, err); }
+});
+app.delete('/api/nodes/:id', requireAdmin, (req, res) => {
+    try { nodeRegistry.remove(req.params.id); audit(req, 'node-remove', null, req.params.id); res.json({ success: true }); }
+    catch (err) { nodeError(res, err); }
 });
 
 app.get('/api/art/:gameId', async (req, res) => {

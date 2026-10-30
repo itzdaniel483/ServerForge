@@ -1,0 +1,53 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
+const { once } = require('node:events');
+const { NodeRegistry } = require('../services/nodeRegistry');
+const { createNodeTransport } = require('../services/nodeTransport');
+const { NodeClient, connectPinned } = require('../services/nodeClient');
+
+test('real pinned client pairs, requires approval, reconnects with persisted identity and is revoked', { timeout: 15000 }, async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-node-client-'));
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', path.join(tmp, 'key.pem'), '-out', path.join(tmp, 'cert.pem'), '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' });
+    const registry = new NodeRegistry({ dataDir: path.join(tmp, 'hub') });
+    const transport = await createNodeTransport({ registry, host: '127.0.0.1', port: 0, key: fs.readFileSync(path.join(tmp, 'key.pem')), cert: fs.readFileSync(path.join(tmp, 'cert.pem')) });
+    const client = new NodeClient({ dataDir: path.join(tmp, 'client'), name: 'Test PC', platform: 'win32', reconnectDelay: 5000 });
+    const failures = [];
+    client.on('failure', err => failures.push(err.message));
+    let second;
+    try {
+        await assert.rejects(connectPinned(transport.hubUrl, '0'.repeat(64)), /fingerprint mismatch/);
+        const bundle = registry.createEnrolment({ hubUrl: transport.hubUrl, hubFingerprint: transport.fingerprint });
+        const pending = once(client, 'pending');
+        await client.pair(bundle);
+        const [candidate] = await pending;
+        await assert.rejects(client.pair(bundle), /already active/);
+        assert.equal(registry.list().length, 0);
+        assert.equal(registry.listPending()[0].fingerprint, candidate.fingerprint);
+        assert.throws(() => registry.approve(candidate.candidateId, {}), /fingerprint/);
+        const online = once(client, 'online');
+        const approved = registry.approve(candidate.candidateId, { fingerprintConfirmed: true });
+        assert.equal((await online)[0].nodeId, approved.id);
+        assert.equal(transport.listStatus()[approved.id].online, true);
+        client.stop();
+        second = new NodeClient({ dataDir: path.join(tmp, 'client') });
+        second.on('failure', err => failures.push(err.message));
+        const reconnected = once(second, 'online');
+        await second.start();
+        assert.equal((await reconnected)[0].nodeId, approved.id);
+        const offline = once(second, 'offline');
+        registry.remove(approved.id);
+        await offline;
+        assert.equal(transport.listStatus()[approved.id], undefined);
+        assert.equal(registry.list().length, 0);
+        assert.deepEqual(failures, []);
+        const identity = JSON.parse(fs.readFileSync(path.join(tmp, 'client', 'node-identity.json')));
+        assert.equal(identity.code, undefined);
+        assert.equal(fs.statSync(path.join(tmp, 'client', 'node-identity.json')).mode & 0o777, 0o600);
+        fs.writeFileSync(path.join(tmp, 'client', 'node-identity.json'), 'broken');
+        assert.throws(() => new NodeClient({ dataDir: path.join(tmp, 'client') }), /recover it manually/);
+    } finally { client.stop(); second?.stop(); await transport.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
