@@ -21,7 +21,8 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Revoking server access evicts live-log sockets (codex)
 - [ ] Deleting/demoting a user drops their live sockets (follow-up)
 - [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
-- [ ] Real install verified end to end (Valheim: record lost in crash, re-add)
+- [x] Real install verified end to end: Valheim installed (2.1 GB), started, listening, stopped (2026-10-30)
+- [ ] Open Valheim UDP 2456-2457 in UFW for LAN play (ask Daniel which devices)
 - [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
 
 ## Phase 2: hosting features
