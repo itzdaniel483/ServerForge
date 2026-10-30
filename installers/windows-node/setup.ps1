@@ -163,6 +163,9 @@ $Total = 6
 $Identity = Join-Path $DataDir 'node\node-identity.json'
 # Paired = the saved identity was approved (it has a nodeId). An attempt that was never approved leaves an identity
 # without one (Daniel 3511: Setup said "already paired" but the panel had no such PC); that is discarded below.
+# The identity is written with a .bak copy (crash-safe writes); the client refuses to start if a .bak is left
+# without a valid main file (Daniel 3515), so always remove all three together.
+function Remove-Identity { foreach ($f in @($Identity, "$Identity.bak", "$Identity.tmp")) { Remove-Item $f -Force -ErrorAction SilentlyContinue } }
 function Test-Approved { try { return [bool]((Get-Content -Raw $Identity | ConvertFrom-Json).nodeId) } catch { return $false } }
 $AlreadyPaired = (Test-Path $Identity) -and (Test-Approved) -and -not $Repair
 
@@ -190,7 +193,7 @@ Step 2 $Total 'Pairing file'
 if ($AlreadyPaired) {
     Say '  This PC is already paired; keeping it. If the panel does not recognise it any more, Setup offers to pair again at the end.' 'Green'
 } else {
-if (Test-Path $Identity) { Remove-Item $Identity -Force; Say '  Removed an unfinished pairing from an earlier attempt.' }
+if ((Test-Path $Identity) -or (Test-Path "$Identity.bak")) { Remove-Identity; Say '  Removed an unfinished pairing from an earlier attempt.' }
 $PairingFile = Select-PairingFile $PairingFile
 }
 
@@ -241,7 +244,7 @@ if ($link -ne 'connected' -and $AlreadyPaired) {
     $answer = Read-Host '  Pair it again now? You need a new pairing file from Nodes > Add node. [Y/n]'
     if ($answer -match '^(n|no)$') { Fail 'Not paired. Run Setup again when you have a pairing file.' }
     Stop-Service -Name $LinkService -Force -ErrorAction SilentlyContinue
-    Remove-Item $Identity -Force -ErrorAction SilentlyContinue
+    Remove-Identity
     Invoke-Pairing (Select-PairingFile $null)
     $link = Wait-Link
 }
