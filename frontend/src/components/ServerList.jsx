@@ -81,8 +81,9 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
                                     <span className="text-gray-400">Port <span className="font-mono font-semibold text-gray-100">{s.port || 27015}</span></span>
                                     {s.owner && <span className="text-gray-400 truncate">Owner <span className="font-semibold text-gray-100">{s.owner}</span></span>}
                                 </div>
+                                {s.installError && <div className="text-sm font-semibold text-red-300">{s.installError}</div>}
                                 <div className="mt-auto flex items-center gap-2">
-                                    {!(isAdmin || (s.perms || []).includes('power')) ? null : on ? (
+                                    {!(isAdmin || (s.perms || []).includes('power')) || s.status === 'installing' || s.status === 'failed' ? null : on ? (
                                         <>
                                             <Button variant="stop" size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop'])}><Square size={15} />Stop</Button>
                                             <Button size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop', 'start'])} title="Restart"><RotateCw size={15} />Restart</Button>

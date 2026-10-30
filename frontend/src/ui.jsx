@@ -25,12 +25,18 @@ export function Card({ className = '', children, ...rest }) {
     return <div className={`bg-gray-900 border border-gray-800 rounded-xl ${className}`} {...rest}>{children}</div>;
 }
 
+const STATUS = {
+    running: ['Online', 'bg-go-500/15 text-go-300 ring-go-500/40', 'bg-go-400 animate-pulse'],
+    installing: ['Installing', 'bg-ember-500/15 text-ember-300 ring-ember-500/40', 'bg-ember-400 animate-pulse'],
+    failed: ['Install failed', 'bg-red-500/15 text-red-300 ring-red-500/40', 'bg-red-400'],
+};
+
 export function Status({ status }) {
-    const on = status === 'running';
+    const [label, pill, dot] = STATUS[status] || ['Offline', 'bg-gray-800 text-gray-300 ring-gray-700', 'bg-gray-500'];
     return (
-        <span className={`inline-flex items-center gap-2 h-7 px-3 rounded-full text-xs font-bold uppercase tracking-wider ${on ? 'bg-go-500/15 text-go-300 ring-1 ring-go-500/40' : 'bg-gray-800 text-gray-300 ring-1 ring-gray-700'}`}>
-            <span className={`w-2 h-2 rounded-full ${on ? 'bg-go-400 animate-pulse' : 'bg-gray-500'}`} />
-            {on ? 'Online' : 'Offline'}
+        <span className={`inline-flex items-center gap-2 h-7 px-3 rounded-full text-xs font-bold uppercase tracking-wider ring-1 ${pill}`}>
+            <span className={`w-2 h-2 rounded-full ${dot}`} />
+            {label}
         </span>
     );
 }

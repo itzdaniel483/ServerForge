@@ -79,7 +79,10 @@ cleanupOrphanedProcesses();
     await userStore.init(); // Initialize user store (creates default admin if needed)
     const servers = serverStore.getAll();
     for (const srv of servers) {
-        if (srv.status !== 'stopped') {
+        if (srv.status === 'installing') {
+            // The panel stopped (restart or host crash) part-way through a download.
+            await serverStore.update(srv.id, { status: 'failed', installError: 'Install was interrupted. Use Update to finish it.' });
+        } else if (srv.status !== 'stopped' && srv.status !== 'failed') {
             await serverStore.updateStatus(srv.id, 'stopped');
         }
     }
@@ -290,6 +293,7 @@ app.post('/api/install', requireAdmin, async (req, res) => {
     const clash = serverStore.getAll().find(s => Number(s.port) === vars.port);
     if (clash) return res.status(409).json({ error: `Port ${vars.port} is already used by ${clash.name}` });
 
+    let newServer = null;
     try {
         // Every server goes in its own folder under SERVERS_ROOT; the folder name comes from the server name.
         let folder = vars.name.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 40) || game.id;
@@ -298,16 +302,11 @@ app.post('/api/install', requireAdmin, async (req, res) => {
         console.log(`Installing ${game.name} (${game.appId}) to ${installPath}...`);
         const log = line => io.to('admins').emit('install-log', line);
 
-        if (body.useCache && await cacheService.isCached(game.appId)) {
-            log('Copying from cache...\n');
-            await cacheService.copyFromCache(game.appId, installPath);
-        } else {
-            await steamcmd.install(game.appId, installPath, log, game.beta || null);
-        }
-
+        // Save the record before downloading, so a crash or restart mid-install leaves a
+        // visible "failed" server (finish it with Update) instead of a nameless folder.
         const rconPassword = catalog.newRconPassword();
         const launch = catalog.buildLaunch(game, vars, { rconPassword });
-        const newServer = {
+        newServer = await serverStore.add({
             id: crypto.randomUUID(),
             name: vars.name,
             game: game.name,
@@ -317,18 +316,27 @@ app.post('/api/install', requireAdmin, async (req, res) => {
             port: vars.port,
             vars,
             rconPassword,
-            status: 'stopped',
+            status: 'installing',
             owner: req.user ? req.user.username : 'admin',
             autoRestart: true,
             ...launch,
-        };
-        await serverStore.add(newServer);
+        });
+
+        if (body.useCache && await cacheService.isCached(game.appId)) {
+            log('Copying from cache...\n');
+            await cacheService.copyFromCache(game.appId, installPath);
+        } else {
+            await steamcmd.install(game.appId, installPath, log, game.beta || null);
+        }
+
         if (game.engine === 'source') await steamcmd.createServerConfig(installPath, game.gameDir, rconPassword, vars.name);
         audit(req, 'install', newServer, game.name);
+        newServer = await serverStore.update(newServer.id, { status: 'stopped', installError: undefined });
         log(`\nDone: ${vars.name} is ready.\n`);
         res.json({ success: true, server: newServer });
     } catch (err) {
         console.error('Installation failed:', err);
+        if (newServer) await serverStore.update(newServer.id, { status: 'failed', installError: err.message }).catch(() => {});
         res.status(err.status || 500).json({ error: err.message });
     }
 });
@@ -377,6 +385,8 @@ app.post('/api/server/start', async (req, res) => {
 
 // Shared by the start route, scheduled tasks and crash recovery.
 async function startServer(srv) {
+    if (srv.status === 'installing') throw Object.assign(new Error('Still installing'), { status: 409 });
+    if (srv.status === 'failed') throw Object.assign(new Error('Install did not finish. Run Update first.'), { status: 409 });
     if (!srv.executable) {
         const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
         if (!game) throw Object.assign(new Error('No launch line set. Add one in the Launch tab.'), { status: 400 });
@@ -421,6 +431,7 @@ app.post('/api/server/:id/update', requireAdmin, async (req, res) => {
     const srv = serverStore.get(id);
 
     if (!srv) return res.status(404).json({ error: 'Server not found' });
+    if (srv.status === 'installing') return res.status(409).json({ error: 'Still installing' });
 
     try {
         // Stop server if running
@@ -439,7 +450,9 @@ app.post('/api/server/:id/update', requireAdmin, async (req, res) => {
         // We use the install method which runs app_update
         steamcmd.install(srv.appId, srv.path, (log) => {
             toServer(id).emit(`update-log-${id}`, log);
-        }).then(() => {
+        }).then(async () => {
+            // Update also finishes an install that failed or was interrupted.
+            if (serverStore.get(id)?.status === 'failed') await serverStore.update(id, { status: 'stopped', installError: undefined });
             toServer(id).emit(`update-complete-${id}`, { success: true });
         }).catch((err) => {
             console.error('Update failed:', err);

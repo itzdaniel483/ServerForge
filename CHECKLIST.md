@@ -20,6 +20,7 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Scheduler 5-minute gap enforced for cron ranges/lists (codex finding)
 - [x] Revoking server access evicts live-log sockets (codex)
 - [ ] Deleting/demoting a user drops their live sockets (follow-up)
+- [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
 - [ ] Real install verified end to end (Valheim: record lost in crash, re-add)
 - [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
 

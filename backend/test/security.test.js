@@ -31,7 +31,8 @@ test.before(async () => {
     fs.mkdirSync(fake, { recursive: true });
     fs.writeFileSync(path.join(fake, 'run.sh'), '#!/bin/sh\nwhile true; do echo tick; sleep 1; done\n', { mode: 0o755 });
     fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
-    fs.writeFileSync(path.join(tmp, 'data', 'servers.json'), JSON.stringify([{ id: 'fake1', name: 'Fake', game: 'Test', appId: '4020', path: fake, port: 27999, rconPassword: 'r', status: 'stopped', owner: 'admin', executable: 'run.sh', args: [] }]));
+    fs.writeFileSync(path.join(tmp, 'data', 'servers.json'), JSON.stringify([{ id: 'fake1', name: 'Fake', game: 'Test', appId: '4020', path: fake, port: 27999, rconPassword: 'r', status: 'stopped', owner: 'admin', executable: 'run.sh', args: [] },
+        { id: 'half1', name: 'Half', game: 'Test', appId: '4020', path: path.join(tmp, 'servers', 'half'), port: 27998, rconPassword: 'r', status: 'installing', owner: 'admin', executable: 'run.sh', args: [] }]));
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
@@ -186,4 +187,12 @@ test('revoking server access stops live logs on an existing socket', async () =>
         socket.close();
         await api('POST', '/api/server/stop', { token: adminToken, body: { id: 'fake1' } });
     }
+});
+
+test('an install cut off by a restart shows as failed and cannot be started', async () => {
+    const list = await api('GET', '/api/servers', { token: adminToken });
+    const half = list.data.find(s => s.id === 'half1');
+    assert.equal(half.status, 'failed');
+    assert.match(half.installError, /interrupted/);
+    assert.equal((await api('POST', '/api/server/start', { token: adminToken, body: { id: 'half1' } })).status, 409);
 });
