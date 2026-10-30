@@ -65,7 +65,8 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [ ] codex confirms the UI contract (nodeOnline, actions, error codes, fingerprint confirm, cancel code)
 - [ ] Daniel names the first Windows PC (LAN IP) for the UFW rule
 - [x] Phase 1 backend (codex, 47/47) + Nodes page (claude); e2e tested on a throwaway hub
-- [ ] Phase 1 deploy: waiting on codex enrol route fix (server.js `_req`) + route test; listener stays off in production
+- [x] Phase 1 LIVE 2026-10-30: enrol fix + enabled-listener test (codex, 48/48); node listener wss://192.168.55.216:3231 (cert in /etc/serverforge/node-tls via systemd credentials, drop-in deploy/app-serverforge.service.d/nodes.conf); UFW 3231 for .109/.134/.217 only; live pair→approve→online→remove verified with a throwaway node
+- [ ] Daniel's own pairing test on the live panel
 - [ ] Phase 2: list/host/status/console over the link; node badges + filter (claude)
 - [ ] Phase 3: power, commands, files, backups, tasks, cache, install over the link; installer node picker (claude)
 - [ ] Phase 4: Windows node package + test on a real Windows PC
