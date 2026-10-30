@@ -83,6 +83,9 @@ export default function Nodes() {
     );
 }
 
+// Readable versions (Daniel 3602): 1.0.3 shows as v1.0.3; older build hashes show as they are.
+const vLabel = v => (v ? (/^\d+\.\d+\.\d+$/.test(v) ? `v${v}` : v) : '—');
+
 function UpdateCell({ node, latest, onUpdated }) {
     const [job, setJob] = useState(null);
     const id = encodeURIComponent(node.id);
@@ -93,7 +96,7 @@ function UpdateCell({ node, latest, onUpdated }) {
         return () => clearInterval(t);
     }, [job, id, onUpdated]);
     async function start() {
-        if (!window.confirm(`Update ${node.name} to version ${latest}? Its ServerForge restarts (about a minute); game servers running on it are stopped and need starting again.`)) return;
+        if (!window.confirm(`Update ${node.name} to ${vLabel(latest)}? Its ServerForge restarts (about a minute); game servers running on it are stopped and need starting again.`)) return;
         try { setJob((await axios.post(`/api/nodes/${id}/update`)).data); } catch (err) { setJob({ step: 'failed', error: errorText(err) }); }
     }
     const behind = latest && node.version && node.version !== latest;
@@ -103,7 +106,7 @@ function UpdateCell({ node, latest, onUpdated }) {
     return (
         <span className="inline-flex items-center gap-2">
             {job?.step === 'failed' && <span className="text-xs text-stop-300" title={job.error}>Update failed</span>}
-            {behind && node.online && <Button size="sm" variant="primary" onClick={start} title={`Update to ${latest}`}>Update</Button>}
+            {behind && node.online && <Button size="sm" variant="primary" onClick={start} title={`Update to ${vLabel(latest)}`}>Update to {vLabel(latest)}</Button>}
             {latest && !node.version && node.online && <span className="text-xs text-gray-400" title="This machine was set up before one-click updates existed">Run Setup once to enable updates</span>}
         </span>
     );
@@ -137,7 +140,7 @@ function NodeRow({ node, onRemove, latest, onUpdated }) {
                 </td>
             ))}
             <td className="td hidden sm:table-cell text-xs text-gray-400"><span className="inline-flex items-center gap-1.5"><Clock size={12} />{local ? 'Always connected' : node.online ? 'Connected' : `Last seen ${ago(node.lastSeen)}`}</span></td>
-            <td className="td hidden md:table-cell"><span className={`font-mono text-xs ${!local && latest && node.version && node.version !== latest ? 'text-warn-300' : 'text-gray-400'}`} title={!local && latest && node.version !== latest ? `Panel has ${latest}` : ''}>{local ? (latest || '—') : (node.version || '—')}</span></td>
+            <td className="td hidden md:table-cell"><span className={`font-mono text-xs ${!local && latest && node.version && node.version !== latest ? 'text-warn-300' : 'text-gray-400'}`} title={!local && latest && node.version !== latest ? `Panel has ${vLabel(latest)}` : ''}>{local ? vLabel(latest) : vLabel(node.version)}</span></td>
             <td className="td text-right"><span className="inline-flex items-center gap-2 justify-end">{!local && <UpdateCell node={node} latest={latest} onUpdated={onUpdated} />}{!local && <Button size="sm" variant="quiet" onClick={() => onRemove(node)} aria-label={`Remove ${node.name}`}><Trash2 size={13} />Remove</Button>}</span></td>
         </tr>
     );

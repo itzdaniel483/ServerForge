@@ -74,8 +74,25 @@ cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt
 if [ -n "${RELEASE_NOTE:-}" ]; then printf '%s\n%s\n' "$(date -u +%FT%TZ)" "$RELEASE_NOTE" > "$PKG/app/RELEASE.txt"; fi
 
 # 4a. Version stamp + update signing key (one-click updates, Daniel 3591/3595).
-VERSION="$(cd "$PKG/app" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
+# Readable versions (Daniel 3602): BASE from the repo's VERSION file (e.g. 1.0) + a patch number that goes up
+# automatically whenever the app's contents change (the content hash is kept as the build ID).
+BUILD="$(cd "$PKG/app" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
+BASE="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+[[ "$BASE" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "VERSION must look like 1.0" >&2; exit 1; }
+STATE="$OUT/version-state.json"
+VERSION="$(python3 - "$STATE" "$BASE" "$BUILD" <<'PY'
+import json, sys, os
+state_file, base, build = sys.argv[1:4]
+st = json.load(open(state_file)) if os.path.exists(state_file) else {}
+if st.get('build') == build and st.get('base') == base: patch = st['patch']
+elif st.get('base') == base: patch = st.get('patch', -1) + 1
+else: patch = 0
+json.dump({'base': base, 'patch': patch, 'build': build}, open(state_file, 'w'))
+print(f"{base}.{patch}")
+PY
+)"
 echo "$VERSION" > "$PKG/app/VERSION"
+echo "$BUILD" > "$PKG/app/BUILD"
 PUBKEY="${UPDATE_PUBKEY:-/var/lib/serverforge/data/update-signing-key.pub.pem}"
 if sudo -n test -f "$PUBKEY" 2>/dev/null; then sudo -n cat "$PUBKEY" > "$PKG/service/update-key.pem"
 elif [ -f "$PUBKEY" ]; then cp "$PUBKEY" "$PKG/service/update-key.pem"
