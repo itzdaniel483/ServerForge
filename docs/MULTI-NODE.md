@@ -1,8 +1,8 @@
-# Multi-node ServerForge (design, draft 1)
+# Multi-node ServerForge (design, draft 2 — protocol review)
 
 Daniel (#gamemanager, 2026-10-30): "connect other instances of this panel so we can combine Windows and Linux servers."
 
-Ownership: **claude** owns this design, the checklist section and all UI. **codex** owns the node protocol and backend. Nothing gets built until Daniel and codex agree on this doc.
+Ownership: **claude** owns the product design, checklist and all UI; **codex** owns the protocol sections and backend. Daniel approved LAN first with outside nodes later. This remains a design; no link listener or firewall rule is enabled by this document.
 
 ## Words
 
@@ -27,7 +27,7 @@ flowchart LR
 
 **Nodes dial out to the hub.** A node keeps one authenticated WebSocket open to the hub, and the hub sends requests down it. So:
 - Nodes need **no inbound port** opened (Windows Firewall, home routers, NAT).
-- There is only one thing to protect: the hub's address.
+- The hub is the browser entry point; protect its users/keys and each node's private key and local runtime too.
 - The hub knows straight away when a node goes offline (the channel drops).
 
 ## Pairing (explicit enrolment only)
@@ -47,9 +47,19 @@ sequenceDiagram
 ```
 
 - The code only starts the pairing. After that the node signs in with its own key pair. The hub stores only the public key and its fingerprint.
-- An admin must press **Approve**, so a leaked code alone can't add a node.
+- An admin must press **Approve** and compare the node key fingerprint shown locally on the intended node. A node's self-reported name/OS is not proof of identity. A leaked code alone cannot add a node.
 - **Remove node** on the hub deletes the key. The node is refused on its next connect, and any open channel is closed at once.
 - TLS is required between node and hub. The hub's self-signed certificate is pinned at pairing (fingerprint shown on both screens to compare).
+
+### Pairing and reconnect protocol v1 (codex)
+
+- Use a separate TLS listener exposing only `/node/v1/connect`; it serves no browser panel, user APIs or static files. Its bind address/port are explicit deployment settings, disabled until configured. Do not reuse the plaintext panel listener on 3230. Keep the existing panel socket namespace separate.
+- The node generates an Ed25519 key pair locally; its private key never leaves the node. Store private keys and node credentials with owner-only permissions. The hub pins each approved public key; receiving a public key is not authentication.
+- The enrolment bundle contains the hub URL, stable hub ID, SHA-256 certificate fingerprint and a cryptographically random single-use code (at least 128 bits of entropy, 10-minute expiry). Transfer it through the existing authenticated admin UI or a private console. The pin must come from this trusted bundle, never from the unauthenticated connection being pinned. No global TLS-verification disable flag; only this explicit pin may trust a self-signed hub certificate.
+- Store only a hash of an issued code. A valid code is consumed atomically when it creates one pending candidate bound to that public key. The pending candidate expires after 10 minutes, is rate-limited with bounded candidate counts and cannot execute or stream actions before approval. Approval targets a candidate ID and its exact key fingerprint. Rejected/expired candidates require a fresh code.
+- On every connection, the hub sends a fresh random challenge of at least 32 bytes and a random connection/session ID. The node signs a domain-separated, canonically encoded tuple `(protocolVersion, hubId, nodeId-or-candidateId, publicKeyFingerprint, sessionId, challenge)` with its private key. Challenges are single-use, connection-bound and expire after 30 seconds. The hub verifies the signature against the candidate/approved key before enabling the channel. This prevents replaying a captured public key or prior handshake. Browser login tokens/cookies never authenticate this listener.
+- Removal revokes the key, closes all live links for that node, fails outstanding RPCs and prevents reconnect. An approved node has at most one active connection; a fresh authenticated connection supersedes its prior link. Heartbeats detect dead links and update `online`/`lastSeen` without stopping games on the node.
+- Initial implementation uses the LAN TLS certificate pin. Later external routing must preserve end-to-end node authentication and explicitly reconfigure the expected TLS identity; a terminating tunnel presents a different certificate. Never silently replace a pin based on an error or a newly observed certificate. Certificate/key rotation requires an authenticated admin operation.
 
 ## What crosses the link
 
@@ -60,32 +70,52 @@ sequenceDiagram
 - **Who did it:** each message carries the hub user's name. The node writes it to its own activity log and the hub writes it to the hub log, so both sides have an audit trail.
 - **Trust:** the node trusts the hub as an admin. So the hub is the thing to protect; it keeps the current login, rate-limit and session rules. On the node itself, local login can be switched off (node-only mode).
 
+### RPC and authorization rules
+
+- Envelopes carry `version`, unpredictable request `id`, allow-listed `action`, optional node-local `serverId`, validated `params`, and hub-generated actor ID/name. Nodes accept them only over the authenticated hub link. Nodes cannot submit browser user credentials or authoritative access rules.
+- The hub authenticates the browser and resolves the current per-server permission **before each RPC**. Start/stop require power, command requires console, reads require the corresponding view/files/backups permission; install, cache mutations, configuration, access and task mutations remain admin-only as today. Nodes apply their local path, executable and catalogue validators again. No arbitrary URL, shell, executable override or raw HTTP proxy action exists.
+- Bound message sizes, pending requests, stream buffers and request deadlines. Use the existing 5MB file limit with bounded chunks rather than an unlimited WebSocket payload. Limit ordinary control envelopes to 64KB. Malformed/unknown actions fail closed; sensitive values, enrolment codes and private keys never enter logs.
+- Responses correlate to the request ID and current connection generation. Drop late responses from replaced links. A timeout/disconnect means the outcome of a mutation may be unknown: do not automatically replay start/install/restore/command requests. Keep a bounded operation-ID result journal for mutating actions so an explicit retry can return its recorded outcome without executing twice. Long installs/cache jobs acknowledge an operation ID immediately and stream/poll progress separately.
+- Route streams using a validated node/server identity into hub-owned Socket.IO rooms. The node cannot choose a browser room or recipient. Apply the same revocation behavior as local servers. Remote server metadata must be sanitized before reaching users; host paths, environment variables, RCON credentials and access records are admin-only or omitted.
+- Initial phases expose pairing and read-only actions only. Each later named action needs validation and permission tests before being added to the allow-list. No wildcard `backup.*`/`cache.*` dispatch.
+
 ## Data and ids
 
-- Every server gets a `nodeId` (`local` for the hub's own servers). In the UI and the API, a server is `nodeId:serverId`. Existing servers become `local:<id>` without any change on disk.
+- Every server gains `nodeId` (`local` for the hub's own servers), `nodeName` and `nodeOs`. Preserve existing local `id` values and request bodies for backward compatibility. Remote API IDs use `<hub-issued-node-uuid>:<validated-node-local-server-id>`; the hub resolves this as an opaque identifier and rejects ambiguous/invalid forms. Never let client `nodeId` and server ID disagree.
 - Per-server access rules stay on the hub, keyed by `nodeId:serverId`.
+- Local ACLs remain in existing server records. Remote ACLs are persisted on the hub, keyed by the remote composite ID; importing a node's server list does not grant users access. New remote servers are admin-only until explicitly assigned. Nodes do not define hub owners/permissions. A re-paired node receives a new identity and does not inherit the removed node's ACLs.
 - The game catalogue is used per node: the installer asks the chosen node which games it supports. Windows-only games (Conan Exiles, V Rising, Enshrouded...) become installable once a Windows node is paired.
 
 ## Suggested API (codex to confirm)
 
 | Method | Path | What |
 |---|---|---|
-| GET | `/api/nodes` | `[{id, name, os, online, lastSeen, version, host:{cpuPercent,memory,disk}}]` |
-| POST | `/api/nodes/enrol` | admin → `{code, expiresAt, hubFingerprint}` |
+| GET | `/api/nodes` | admin-only: `[{id, name, os, online, lastSeen, version, host:{cpuPercent,memory,disk}}]`, including `local`; unknown metrics null |
+| POST | `/api/nodes/enrol` | admin → `{code, expiresAt, hubUrl, hubId, hubFingerprint}`; code returned only once |
+| GET | `/api/nodes/pending` | admin-only: expiring candidates with ID, name, OS and public-key fingerprint; no secrets |
 | POST | `/api/nodes/:id/approve` | admin |
 | DELETE | `/api/nodes/:id` | admin, revokes the key |
 | GET | `/api/servers` | each server gains `nodeId`, `nodeName`, `nodeOs` |
-| GET | `/api/games?node=:id` | catalogue as that node sees it (`supported` per its OS) |
+| GET | `/api/games?node=:id` | admin installer: catalogue as that node sees it (`supported` per its OS); omitted node remains local |
 | POST | `/api/install` | body gains `nodeId` (default `local`) |
 
-All other per-server routes stay the same. The router picks local or remote from the server's `nodeId`.
+All other per-server routes stay the same, including start/stop's `{id}` bodies. The router resolves local or remote from the server identity before applying ACLs. Offline node control returns 503 with a stable `NODE_OFFLINE` code; never fall back to executing on the hub. Node list/host details remain admin-only; normal users get only node badges on servers they can view. The normal-user server list filters against hub ACLs before returning any remote metadata.
+
+### Existing global routes and streams
+
+- Preserve native on-disk server/process/task IDs. Resolve composite remote IDs before any `serverStore.get`, ACL middleware or service call; also cover start/stop body IDs and socket `watch`/`unwatch`. Remote stream names use the hub-issued composite ID. Existing local event names and bare local IDs continue working and cannot collide with node UUID prefixes.
+- `/api/tasks/:taskId` mutations remain local for compatibility. Remote task mutations use explicit admin-only `/api/nodes/:nodeId/tasks/:taskId` routes (with matching `/run`). Per-server task listing/creation resolves the server's composite identity.
+- Every cache route (list/status/download/cancel/delete/copy) accepts explicit `?node=:id`, defaulting to `local`. Cache records and streams are scoped by node; a Windows cache must never supply Linux installs. Local `cache-download-<appId>` events remain compatible; remote events include the node identity. Cache copy destinations are validated on the destination node; cross-node cache copying is out of scope initially.
+- `/api/host?node=:id` keeps the existing response shape, defaulting to local. Admins can inspect any node; normal users need current server view access on that exact node. The admin-only Nodes page is the discovery/management surface. Unknown node returns 404; offline metrics are null and controls return 503.
+- `/api/games?node=:id` returns `{nodeId, platform, games}` with the existing game fields. Negotiate protocol, catalogue version and supported actions during link authentication; UI capability flags must not imply unimplemented mutations. Unknown/offline remote selection fails explicitly, never uses the hub platform by fallback. Initial art remains the hub's shared catalogue mapping; unsupported remote catalogue entries use the styled fallback until versions are aligned.
+- Template/config/file actions resolve the selected node too. File writes, raw startup configuration, task changes and cache mutation retain existing admin requirements. Nodes must enforce Windows reparse-point/symlink and Linux symlink boundaries with OS-appropriate validation before filesystem operations.
 
 ## UI (claude)
 
 - **Nodes page** (admin): a card per node with OS badge, online dot, CPU/RAM/disk meters, number of servers and last seen. "Add node" shows the code, a QR and the fingerprint, then waits for Approve. Remove asks for confirmation.
 - **Servers page:** a node badge on each card (OS icon + name), a node filter beside Online/Offline, and an offline node's servers greyed with "Node offline".
 - **Installer:** a node picker first. Games are greyed by that node's OS, and the default is the node that supports the game.
-- **Top bar:** host chips show the selected node, or "All nodes" totals.
+- **Top bar:** host chips show the selected node. All-node views may sum memory/disk bytes; do not sum CPU percentages. Missing/offline metrics stay unknown rather than zero.
 
 ## Build order
 
