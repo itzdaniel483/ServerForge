@@ -306,7 +306,7 @@ app.get('/api/nodes/config', requireAdmin, async (_req, res) => {
     await nodeTransportReady;
     res.json({ enabled: !!nodeTransport, hubUrl: process.env.NODE_PUBLIC_URL || nodeTransport?.hubUrl || null, hubFingerprint: nodeTransport?.fingerprint || null });
 });
-app.post('/api/nodes/enrol', requireAdmin, async (_req, res) => {
+app.post('/api/nodes/enrol', requireAdmin, async (req, res) => {
     await nodeTransportReady;
     if (!nodeTransport) return res.status(503).json({ error: 'Configure the dedicated TLS node listener first', code: 'NODE_LISTENER_DISABLED' });
     try {
