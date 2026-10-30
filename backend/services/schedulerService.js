@@ -10,6 +10,25 @@ const cron = require('node-cron');
 const FILE = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'tasks.json');
 const TYPES = ['restart', 'start', 'stop', 'update', 'backup', 'command'];
 
+// Smallest gap in minutes between runs within an hour (wrapping into the next hour), from the
+// cron minute field. Handles *, n, a-b, lists and /step, so "0-59" or "1,2,3" can't dodge the limit.
+function minuteGap(field) {
+    const mins = new Set();
+    for (const part of field.split(',')) {
+        const [range, stepText] = part.split('/');
+        const step = stepText === undefined ? 1 : parseInt(stepText, 10);
+        let [lo, hi] = range === '*' ? [0, 59] : range.split('-').map(n => parseInt(n, 10));
+        if (hi === undefined) hi = stepText === undefined ? lo : 59;
+        if (!(step > 0) || Number.isNaN(lo) || Number.isNaN(hi)) return 0;
+        for (let m = lo; m <= hi; m += step) mins.add(m);
+    }
+    const sorted = [...mins].sort((a, b) => a - b);
+    if (sorted.length < 2) return 60;
+    let gap = 60 - sorted[sorted.length - 1] + sorted[0];
+    for (let k = 1; k < sorted.length; k++) gap = Math.min(gap, sorted[k] - sorted[k - 1]);
+    return gap;
+}
+
 class SchedulerService {
     constructor() {
         this.tasks = [];
@@ -55,7 +74,7 @@ class SchedulerService {
         const expr = String(input?.cron || '').trim();
         if (!cron.validate(expr) || expr.split(/\s+/).length !== 5) return { error: 'That timetable is not valid (5-part cron, e.g. 0 6 * * *)' };
         // Every-minute tasks would hammer the server and SteamCMD.
-        if (/^\*\s/.test(expr) || /^\*\/[1-4]\s/.test(expr)) return { error: 'Run tasks at most every 5 minutes' };
+        if (minuteGap(expr.split(/\s+/)[0]) < 5) return { error: 'Run tasks at most every 5 minutes' };
         const command = type === 'command' ? String(input?.command || '').trim() : '';
         if (type === 'command' && (!command || command.length > 200 || /[\r\n]/.test(command))) return { error: 'Enter one console command (up to 200 characters)' };
         const label = String(input?.label || '').replace(/[<>\r\n]/g, '').trim().slice(0, 60);
