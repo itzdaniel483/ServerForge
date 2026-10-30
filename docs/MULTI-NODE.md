@@ -166,7 +166,7 @@ sequenceDiagram
 | Screen | Uses | Shows |
 |---|---|---|
 | Servers | `nodeId/nodeName/nodeOs/nodeOnline`, `actions` | machine badge, "All machines" filter (only once a remote server exists), power only with `power` |
-| Server page | `actions`, `nodeHost` | tabs: Files `files.read`, Settings `settings`, Schedule `tasks`, Backups `backups`, Updates `update`, Plugins `files.write`; Delete `delete`; console input `console.command`; Access/Activity always (hub-side) |
+| Server page | `actions`, `nodeHost` | tabs: Files `files.read`, Settings `settings`, Schedule `tasks`, Backups `backups`, Updates `update`, Plugins local servers only (not a federation action); Delete `delete`; console input `console.command`; Access/Activity always (hub-side) |
 | Install | `/api/nodes[].actions` has `install`, `/api/games?node=` | machine picker; a game the machine can't run offers "Install on <machine>" with the right OS; POST carries `nodeId` |
 | Manage Cache | `/api/nodes[].actions` has `cache`, `?node=` on every cache call | machine picker; each machine's cache separate |
 

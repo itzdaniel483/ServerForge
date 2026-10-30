@@ -67,10 +67,8 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] Phase 1 backend (codex, 47/47) + Nodes page (claude); e2e tested on a throwaway hub
 - [x] Phase 1 LIVE 2026-10-30: enrol fix + enabled-listener test (codex, 48/48); node listener wss://192.168.55.216:3231 (cert in /etc/serverforge/node-tls via systemd credentials, drop-in deploy/app-serverforge.service.d/nodes.conf); UFW 3231 for .109/.134/.217 only; live pair→approve→online→remove verified with a throwaway node
 - [ ] Daniel's own pairing test on the live panel
-- [ ] Phase 2 backend: list/host/status/console over the link (codex, in progress)
-- [x] Phase 2 UI: machine badges, machine filter, Node offline, actions-gated buttons/tabs, nodeHost address, NODE_*/OUTCOME_UNKNOWN messages (claude d0d0ef3; mocked browser test)
-- [ ] Phase 3 backend: power, commands, files, backups, tasks, cache, install over the link (codex)
-- [x] Phase 3 UI: Install machine picker + "Install on <machine>", Manage Cache machine picker (claude d0d0ef3)
-- [ ] Needs from codex: `nodeHost` on remote servers; node-level `install`/`cache` in /api/nodes actions; remote install/cache log event names
-- [ ] Phases 2-3 deploy + real end-to-end test with a test node on this VM (claude)
+- [x] Phases 2-3 backend (codex 2e83ca2, 63/63): remote list/console/power/files/backups/tasks/settings/update/delete/install/cache over the link, hub-owned ACLs, OUTCOME_UNKNOWN
+- [x] Phases 2-3 UI (claude d0d0ef3, 516bc71): badges, machine filter, Node offline, actions-gated tabs, nodeHost, Install/Cache machine pickers; Plugins local-only
+- [x] Phases 2-3 LIVE 2026-10-30 14:03; real E2E against the live hub with a throwaway node panel on this VM: pair → server listed with badge → Start → live console → Files → Stop → node killed shows Node offline → reconnect → removed, all cleaned up
+- [ ] Garry's Mod record deleted on live at 14:03:59 by admin (files kept, 6.5G; .bak copy servers.json.keep-1404): ask Daniel whether to restore
 - [ ] Phase 4: Windows node package + test on a real Windows PC

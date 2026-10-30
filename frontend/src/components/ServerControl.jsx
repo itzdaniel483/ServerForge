@@ -155,7 +155,8 @@ function ServerControl({ server, isAdmin, onDeleted }) {
         ...(can(server, 'tasks') ? [{ id: 'tasks', label: 'Schedule', icon: CalendarClock }] : []),
         ...(may('backups') ? [{ id: 'backups', label: 'Backups', icon: Archive }] : []),
         ...(admin('update') ? [{ id: 'updates', label: 'Updates', icon: RefreshCw }] : []),
-        ...(admin('files.write') ? [{ id: 'plugins', label: 'Plugins', icon: Package }] : []),
+        // Plugins/workshop aren't federation actions, so they stay local-only.
+        ...(isAdmin && !isRemote(server) ? [{ id: 'plugins', label: 'Plugins', icon: Package }] : []),
         // Access rules and the activity log live on this panel, so they work for any machine.
         ...(isAdmin ? [{ id: 'access', label: 'Access', icon: Users }, { id: 'activity', label: 'Activity', icon: History }] : []),
     ];
