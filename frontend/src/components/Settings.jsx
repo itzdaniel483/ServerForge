@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, AlertTriangle, Terminal, RefreshCw, Download, Trash2, HardDrive, Package, Users, Shield, Plus, X } from 'lucide-react';
 import axios from 'axios';
-import ChangePassword from './ChangePassword';
 
 
 
@@ -44,15 +43,6 @@ function Settings() {
                         }`}
                 >
                     General
-                </button>
-                <button
-                    onClick={() => setActiveTab('account')}
-                    className={`px-4 py-2 font-medium transition-colors ${activeTab === 'account'
-                        ? 'text-blue-400 border-b-2 border-blue-400'
-                        : 'text-gray-400 hover:text-white'
-                        }`}
-                >
-                    Account
                 </button>
                 <button
                     onClick={() => setActiveTab('users')}
@@ -114,7 +104,6 @@ function Settings() {
                 </div>
             )}
 
-            {activeTab === 'account' && <ChangePassword />}
             {activeTab === 'users' && <UserManager />}
             {activeTab === 'cache' && <CacheManager />}
         </div>

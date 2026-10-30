@@ -21,6 +21,7 @@ Owner: claude (checklist/deploy/UI); codex back 2026-10-30 on backend review. Br
 - [x] Revoking server access evicts live-log sockets (codex)
 - [x] Deleting/renaming/demoting a user disconnects their live sockets (codex)
 - [x] Password change ends every existing session; UI signs out with a notice (codex backend, claude UI)
+- [x] Non-admin users can change their own password (new Account tab; was hidden in admin-only Settings)
 - [ ] Any future password-reset path must bump sessionVersion
 - [x] Install saves an 'installing' record first; interrupted/failed installs show as Install failed and Update finishes them
 - [x] Real install verified end to end: Valheim installed (2.1 GB), started, listening, stopped (2026-10-30)
