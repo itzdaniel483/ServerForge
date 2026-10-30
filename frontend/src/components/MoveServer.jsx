@@ -12,8 +12,12 @@ import { osLabel } from '../nodeUtils';
 
 const STEPS = [['stopping', 'Stop the server'], ['installing', 'Fresh install on the new machine'], ['copying', 'Copy configs and saves'], ['verifying', 'Start it there and check'], ['done', 'Moved']];
 
+// Off until the move backend ships (item #4); the button would otherwise fail.
+const MOVE_ENABLED = false;
+
 export function MoveButton({ server, onMoved }) {
     const [open, setOpen] = useState(false);
+    if (!MOVE_ENABLED) return null;
     return (
         <>
             <Button onClick={() => setOpen(true)} title="Move this server to another machine"><ArrowRightLeft size={14} />Move to…</Button>
