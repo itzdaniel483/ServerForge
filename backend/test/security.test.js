@@ -26,6 +26,12 @@ async function api(method, url, { token, body } = {}) {
 
 test.before(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-test-'));
+    // A fake game server (a shell script) so access, tasks and start/stop can be tested without SteamCMD.
+    const fake = path.join(tmp, 'servers', 'fake');
+    fs.mkdirSync(fake, { recursive: true });
+    fs.writeFileSync(path.join(fake, 'run.sh'), '#!/bin/sh\nwhile true; do echo tick; sleep 1; done\n', { mode: 0o755 });
+    fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'data', 'servers.json'), JSON.stringify([{ id: 'fake1', name: 'Fake', game: 'Test', appId: '4020', path: fake, port: 27999, rconPassword: 'r', status: 'stopped', owner: 'admin', executable: 'run.sh', args: [] }]));
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
@@ -81,8 +87,8 @@ test('settings: admin only, Steam key never sent back, Cloudflare domain must be
 test('normal users cannot run programs, install, write files or change auth', async () => {
     for (const [m, u, body] of [
         ['POST', '/api/install', { appId: '4020', gameName: 'x' }],
-        ['PUT', '/api/server/1/config', { executable: '/bin/sh' }],
-        ['POST', '/api/server/1/file', { path: 'a', content: 'b' }],
+        ['PUT', '/api/server/fake1/config', { executable: '/bin/sh' }],
+        ['POST', '/api/server/fake1/file', { path: 'a', content: 'b' }],
         ['POST', '/api/restart-backend', {}],
         ['DELETE', '/api/cache/4020', null],
         ['POST', '/api/users', { username: 'z', password: 'zzzzzzzz' }],
@@ -120,4 +126,38 @@ test('security headers are set and CORS is not open to every site', async () => 
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('x-frame-options'), 'DENY');
     assert.equal(res.headers.get('access-control-allow-origin'), null);
+});
+
+test('users only see and control servers they were given, with the chosen permissions', async () => {
+    assert.deepEqual((await api('GET', '/api/servers', { token: userToken })).data, []);
+    assert.equal((await api('GET', '/api/server/fake1/status', { token: userToken })).status, 403);
+    assert.equal((await api('POST', '/api/server/start', { token: userToken, body: { id: 'fake1' } })).status, 403);
+    assert.equal((await api('PUT', '/api/server/fake1/access', { token: userToken, body: { access: [] } })).status, 403);
+    assert.equal((await api('PUT', '/api/server/fake1/access', { token: adminToken, body: { access: [{ username: 'ghost', perms: ['power'] }] } })).status, 400, 'unknown user');
+    assert.equal((await api('PUT', '/api/server/fake1/access', { token: adminToken, body: { access: [{ username: 'player', perms: ['power'] }] } })).status, 200);
+    const seen = (await api('GET', '/api/servers', { token: userToken })).data;
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].rconPassword, undefined, 'no RCON password for users');
+    assert.equal(seen[0].path, undefined, 'no host paths for users');
+    assert.deepEqual(seen[0].perms.sort(), ['power', 'view']);
+    assert.equal((await api('GET', '/api/server/fake1/files', { token: userToken })).status, 403, 'no files permission');
+    assert.equal((await api('POST', '/api/server/start', { token: userToken, body: { id: 'fake1' } })).status, 200);
+    assert.equal((await api('GET', '/api/server/fake1/status', { token: userToken })).data.status, 'running');
+    assert.equal((await api('POST', '/api/server/stop', { token: userToken, body: { id: 'fake1' } })).status, 200);
+    const log = (await api('GET', '/api/activity', { token: adminToken })).data;
+    assert.ok(log.some(r => r.action === 'start' && r.user === 'player'), 'activity log records who started it');
+});
+
+test('scheduled tasks: admins only, sane timetables, and they actually run', async () => {
+    assert.equal((await api('POST', '/api/server/fake1/tasks', { token: userToken, body: { type: 'restart', cron: '0 6 * * *' } })).status, 403);
+    assert.equal((await api('POST', '/api/server/fake1/tasks', { token: adminToken, body: { type: 'restart', cron: '* * * * *' } })).status, 400, 'every minute is refused');
+    assert.equal((await api('POST', '/api/server/fake1/tasks', { token: adminToken, body: { type: 'rm', cron: '0 6 * * *' } })).status, 400);
+    const t = await api('POST', '/api/server/fake1/tasks', { token: adminToken, body: { type: 'start', cron: '0 6 * * *' } });
+    assert.equal(t.status, 200);
+    assert.equal((await api('GET', '/api/server/fake1/tasks', { token: userToken })).data.tasks.length, 1, 'users with access can see the schedule');
+    const run = await api('POST', `/api/tasks/${t.data.id}/run`, { token: adminToken });
+    assert.equal(run.data.ok, true);
+    assert.equal((await api('GET', '/api/server/fake1/status', { token: adminToken })).data.status, 'running');
+    await api('POST', '/api/server/stop', { token: adminToken, body: { id: 'fake1' } });
+    assert.equal((await api('DELETE', `/api/tasks/${t.data.id}`, { token: adminToken })).status, 200);
 });

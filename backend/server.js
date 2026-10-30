@@ -15,6 +15,14 @@ const settingsStore = require('./services/settingsStore');
 const { authMiddleware, socketAuth, JWT_SECRET, validTeamDomain } = require('./middleware/auth');
 const { safeJoin, isInside, isNumericId, isBackupName, SERVERS_ROOT, requireAdmin, loginBlocked, loginFailed, loginSucceeded } = require('./middleware/guard');
 const cron = require('node-cron');
+const crypto = require('crypto');
+const catalog = require('./services/catalog');
+const access = require('./services/access');
+const schedulerService = require('./services/schedulerService');
+const backupService = require('./services/backupService');
+const cacheService = require('./services/cacheService');
+const auditLog = require('./services/auditLog');
+const audit = (req, action, srv, detail) => auditLog.add({ user: req.user?.username || 'system', action, serverId: srv?.id || null, server: srv?.name || null, detail: detail || null });
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
@@ -99,6 +107,21 @@ if (fs.existsSync(frontendPath)) {
 
 // Apply Auth Middleware (Only for API routes)
 app.use('/api', authMiddleware);
+
+// Per-server permissions for non-admins (services/access.js). Admins pass straight through.
+app.use('/api/server', (req, res, next) => {
+    if (!req.user || req.user.role === 'admin') return next();
+    const parts = req.path.split('/').filter(Boolean);   // e.g. ['abc', 'files'] or ['start']
+    let srv, perm;
+    if (parts.length === 1 && ['start', 'stop'].includes(parts[0]) && req.method === 'POST') {
+        srv = serverStore.get(req.body?.id); perm = 'power';
+    } else {
+        srv = serverStore.get(parts[0]); perm = access.needed(req.method, parts[1] || '');
+    }
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    if (!perm || !access.can(req.user, srv, perm)) return res.status(403).json({ error: "You don't have access to that" });
+    next();
+});
 
 // Routes
 
@@ -229,98 +252,75 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 });
 
 app.get('/api/servers', (req, res) => {
-    // RCON passwords are for admins only.
+    // Users only see servers they can access; secrets and host paths are for admins only.
     const all = serverStore.getAll();
-    res.json(req.user?.role === 'admin' ? all : all.map(({ rconPassword, ...s }) => s));
+    if (req.user?.role === 'admin') return res.json(all.map(s => ({ ...s, perms: access.PERMS })));
+    res.json(all.filter(s => access.can(req.user, s, 'view')).map(({ rconPassword, path: _p, env, access: _a, vars, ...s }) => ({ ...s, perms: access.permsFor(req.user, { ...s, access: _a }) })));
 });
 
-const GAME_DEFAULTS = {
-    '4020': { executable: 'srcds_win64.exe', args: ['-console', '-game', 'garrysmod', '+map', 'gm_construct', '+maxplayers', '16'], beta: 'x86-64' },
-    '232250': { executable: 'srcds.exe', args: ['-console', '-game', 'tf', '+map', 'cp_dustbowl', '+maxplayers', '24'] },
-    '740': { executable: 'srcds.exe', args: ['-console', '-game', 'csgo', '-usercon', '+game_type', '0', '+game_mode', '1', '+mapgroup', 'mg_active', '+map', 'de_dust2'] },
-    '4940': { executable: 'srcds.exe', args: ['-console', '-game', 'cstrike', '+map', 'de_dust2', '+maxplayers', '16'] },
-    '222860': { executable: 'srcds.exe', args: ['-console', '-game', 'left4dead2', '+map', 'c1m1_hotel'] },
-    '1007': { executable: 'srcds.exe', args: ['-console', '-game', 'hl2mp', '+map', 'dm_lockdown'] }
-};
+// Admin: who else can use this server, and what they can do.
+app.put('/api/server/:id/access', requireAdmin, async (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const users = (await userStore.getUsers()).filter(u => u.role !== 'admin').map(u => u.username);
+    const list = access.cleanAccess(req.body?.access, users);
+    if (!list) return res.status(400).json({ error: 'Pick existing users and valid permissions' });
+    const updated = await serverStore.update(srv.id, { access: list });
+    audit(req, 'access', srv, list.map(a => `${a.username}:${a.perms.join('+')}`).join(', ') || 'none');
+    res.json({ success: true, access: updated.access });
+});
+
+
+// Install from the game catalogue (catalog/games.json). The client sends a catalogue id and the
+// game's settings; launch lines are built server-side, so the client never chooses a program to run.
+app.get('/api/games', (req, res) => res.json({ platform: catalog.platformKey(), games: catalog.list() }));
 
 app.post('/api/install', requireAdmin, async (req, res) => {
-    const { appId, gameName, templateName = 'Default', hostname, useCache } = req.body || {};
-    if (!isNumericId(appId)) return res.status(400).json({ error: 'Pick a game' });
-    if (typeof gameName !== 'string' || !gameName.trim()) return res.status(400).json({ error: 'Game name required' });
-    const port = req.body.port == null || req.body.port === '' ? null : Number(req.body.port);
-    if (port !== null && !(Number.isInteger(port) && port >= 1024 && port <= 65535)) return res.status(400).json({ error: 'Port must be 1024-65535' });
+    const body = req.body || {};
+    const game = catalog.get(body.gameId) || catalog.findByAppId(body.appId);
+    if (!game) return res.status(400).json({ error: 'Pick a game' });
+    const { vars, errors } = catalog.cleanVars(game, { ...(body.vars || {}), ...(body.hostname ? { name: body.hostname } : {}), ...(body.port ? { port: body.port } : {}) });
+    if (errors.length) return res.status(400).json({ error: errors.join('. ') });
+    if (!game[catalog.platformKey()]) return res.status(400).json({ error: `${game.name} only has a ${game.linux ? 'Linux' : 'Windows'} server` });
+    const clash = serverStore.getAll().find(s => Number(s.port) === vars.port);
+    if (clash) return res.status(409).json({ error: `Port ${vars.port} is already used by ${clash.name}` });
 
     try {
-        // Every server goes in its own folder under SERVERS_ROOT; the client only names the folder.
-        const folder = String(req.body.installPath || hostname || gameName).split(/[\\/]/).pop().replace(/[^\w .-]/g, '').trim() || `server-${Date.now()}`;
+        // Every server goes in its own folder under SERVERS_ROOT; the folder name comes from the server name.
+        let folder = vars.name.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 40) || game.id;
+        if (await fs.pathExists(path.join(SERVERS_ROOT, folder))) folder = `${folder}-${Date.now().toString(36)}`;
         const installPath = safeJoin(SERVERS_ROOT, folder);
-        if (installPath === SERVERS_ROOT) return res.status(400).json({ error: 'Choose a folder name' });
-        console.log(`Installing ${gameName} (${appId}) to ${installPath} using template "${templateName}"...`);
+        console.log(`Installing ${game.name} (${game.appId}) to ${installPath}...`);
+        const log = line => io.to('admins').emit('install-log', line);
 
-        if (useCache) {
-            io.emit('install-log', `Checking cache for ${gameName}...`);
-            const isCached = await cacheService.isCached(appId);
-
-            if (isCached) {
-                io.emit('install-log', `Found cached version. Copying files... (This is much faster)`);
-                await cacheService.copyFromCache(appId, installPath);
-                io.emit('install-log', `Files copied successfully!`);
-            } else {
-                io.emit('install-log', `Game not found in cache. Falling back to standard download...`);
-                const defaults = GAME_DEFAULTS[appId];
-                await steamcmd.install(appId, installPath, (log) => {
-                    io.emit('install-log', log);
-                }, defaults?.beta);
-            }
+        if (body.useCache && await cacheService.isCached(game.appId)) {
+            log('Copying from cache...\n');
+            await cacheService.copyFromCache(game.appId, installPath);
         } else {
-            const defaults = GAME_DEFAULTS[appId];
-            await steamcmd.install(appId, installPath, (log) => {
-                io.emit('install-log', log);
-            }, defaults?.beta);
+            await steamcmd.install(game.appId, installPath, log, game.beta || null);
         }
 
-        // Get template configuration
-        const template = templateStore.getTemplate(appId, templateName);
-        const defaults = { ...(template || GAME_DEFAULTS[appId] || { executable: 'srcds.exe', args: ['-console'] }) };
-        // Templates name the Windows program; Linux SteamCMD installs the srcds_run launchers instead.
-        if (process.platform !== 'win32' && /^srcds(_win64)?\.exe$/.test(defaults.executable)) {
-            defaults.executable = defaults.executable === 'srcds_win64.exe' ? 'srcds_run_x64' : 'srcds_run';
-        }
-
-        // Prepare args with custom port
-        let args = [...defaults.args];
-        const serverPort = port || defaults.port || 27015;
-        if (port && !args.includes('+port')) args.push('+port', String(port));
-
-        // Extract game directory from args (usually follows -game)
-        const gameDirIndex = args.indexOf('-game');
-        const gameDir = gameDirIndex !== -1 ? args[gameDirIndex + 1] : gameName.toLowerCase().replace(/\s+/g, '');
-
-        // Create new server object
+        const rconPassword = catalog.newRconPassword();
+        const launch = catalog.buildLaunch(game, vars, { rconPassword });
         const newServer = {
-            id: Date.now().toString(),
-            name: hostname || gameName,
-            game: gameName,
-            appId: appId,
+            id: crypto.randomUUID(),
+            name: vars.name,
+            game: game.name,
+            gameId: game.id,
+            appId: game.appId,
             path: installPath,
-            port: serverPort,
-            rconPassword: Math.random().toString(36).slice(-8),
+            port: vars.port,
+            vars,
+            rconPassword,
             status: 'stopped',
             owner: req.user ? req.user.username : 'admin',
-            executable: defaults.executable,
-            args: args
+            autoRestart: true,
+            ...launch,
         };
-
-        // Add to store
         await serverStore.add(newServer);
-
-        await steamcmd.createServerConfig(
-            installPath,
-            gameDir,
-            newServer.rconPassword,
-            hostname || gameName
-        );
-
+        if (game.engine === 'source') await steamcmd.createServerConfig(installPath, game.gameDir, rconPassword, vars.name);
+        audit(req, 'install', newServer, game.name);
+        log(`\nDone: ${vars.name} is ready.\n`);
         res.json({ success: true, server: newServer });
     } catch (err) {
         console.error('Installation failed:', err);
@@ -328,42 +328,68 @@ app.post('/api/install', requireAdmin, async (req, res) => {
     }
 });
 
-app.post('/api/server/start', async (req, res) => {
-    const { id } = req.body;
-    const srv = serverStore.get(id);
+// Change a server's settings (name, map, players, ports...). Rebuilds the launch line from the catalogue.
+app.put('/api/server/:id/settings', requireAdmin, async (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+    if (!game) return res.status(400).json({ error: 'This server was not installed from the catalogue; edit its launch line instead' });
+    const { vars, errors } = catalog.cleanVars(game, { ...(srv.vars || {}), ...(req.body?.vars || {}) });
+    if (errors.length) return res.status(400).json({ error: errors.join('. ') });
+    const clash = serverStore.getAll().find(s => s.id !== srv.id && Number(s.port) === vars.port);
+    if (clash) return res.status(409).json({ error: `Port ${vars.port} is already used by ${clash.name}` });
+    if (!srv.rconPassword) srv.rconPassword = catalog.newRconPassword();
+    const launch = catalog.buildLaunch(game, vars, srv);
+    const autoRestart = typeof req.body?.autoRestart === 'boolean' ? req.body.autoRestart : srv.autoRestart !== false;
+    const updated = await serverStore.update(srv.id, { vars, name: vars.name, port: vars.port, autoRestart, rconPassword: srv.rconPassword, ...launch });
+    audit(req, 'settings', srv);
+    res.json({ success: true, server: updated, restartNeeded: processManager.getStatus(srv.id) === 'running' });
+});
 
+app.get('/api/server/:id/settings', (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+    const fields = game ? catalog.list().find(g => g.id === game.id).vars : [];
+    const vars = { ...(srv.vars || {}) };
+    if (req.user.role !== 'admin') delete vars.password;
+    res.json({ fields, vars, autoRestart: srv.autoRestart !== false, configFile: game?.configFile || null, notes: game?.notes || null });
+});
+
+app.post('/api/server/start', async (req, res) => {
+    const { id } = req.body || {};
+    const srv = serverStore.get(id);
     if (!srv) return res.status(404).json({ error: 'Server not found' });
 
     try {
-        // Safety check for missing executable/args (legacy data support)
-        if (!srv.executable) {
-            const defaults = GAME_DEFAULTS[srv.appId];
-            if (defaults) {
-                console.log(`Server ${srv.name} missing executable, using default: ${defaults.executable}`);
-                srv.executable = defaults.executable;
-                srv.args = srv.args || defaults.args;
-                // Save these fixes to the store
-                await serverStore.updateServerConfig(id, { executable: srv.executable, args: srv.args });
-            } else {
-                return res.status(500).json({ error: 'Server configuration missing executable path. Please reinstall or update config.' });
-            }
-        }
-
-        // Construct full executable path
-        // The program must live inside the server's own folder.
-        const execPath = path.resolve(srv.path, srv.executable);
-        if (!isInside(srv.path, execPath)) return res.status(400).json({ error: 'Executable must be inside the server folder' });
-        if (!await fs.pathExists(execPath)) return res.status(400).json({ error: `Executable not found: ${srv.executable}` });
-        const args = srv.args || [];
-        const cwd = srv.path;  // Use server install directory as working directory
-
-        processManager.start(id, execPath, args, cwd);
-        await serverStore.updateStatus(id, 'running');
+        await startServer(srv);
+        audit(req, 'start', srv);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
+
+// Shared by the start route, scheduled tasks and crash recovery.
+async function startServer(srv) {
+    if (!srv.executable) {
+        const game = catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
+        if (!game) throw Object.assign(new Error('No launch line set. Add one in the Launch tab.'), { status: 400 });
+        const { vars } = catalog.cleanVars(game, srv.vars || { name: srv.name, port: srv.port });
+        Object.assign(srv, catalog.buildLaunch(game, vars, srv));
+        await serverStore.update(srv.id, { executable: srv.executable, args: srv.args, env: srv.env, cwd: srv.cwd });
+    }
+    // The program and working folder must live inside the server's own folder.
+    const execPath = path.resolve(srv.path, srv.executable);
+    const cwd = path.resolve(srv.path, srv.cwd || '');
+    if (!isInside(srv.path, execPath) || !isInside(srv.path, cwd)) throw Object.assign(new Error('Executable must be inside the server folder'), { status: 400 });
+    if (!await fs.pathExists(execPath)) throw Object.assign(new Error(`Program not found: ${srv.executable}. Has the game finished installing?`), { status: 400 });
+    // Only plain NAME=value pairs from the catalogue; never PATH or loader overrides that point outside.
+    const env = {};
+    for (const [k, v] of Object.entries(srv.env || {})) if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && !['PATH', 'LD_PRELOAD', 'NODE_OPTIONS'].includes(k)) env[k] = String(v);
+    processManager.start(srv.id, execPath, srv.args || [], cwd, env, { autoRestart: srv.autoRestart !== false });
+    await serverStore.updateStatus(srv.id, 'running');
+}
 
 app.post('/api/server/stop', async (req, res) => {
     const { id } = req.body || {};
@@ -372,10 +398,17 @@ app.post('/api/server/stop', async (req, res) => {
     try {
         processManager.stop(id);
         await serverStore.updateStatus(id, 'stopped');
+        audit(req, 'stop', serverStore.get(id));
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// Activity log: admins see everything; users only their servers (filtered client-side by server id).
+app.get('/api/activity', requireAdmin, (req, res) => {
+    const serverId = typeof req.query.server === 'string' ? req.query.server : undefined;
+    res.json(auditLog.list({ serverId, limit: Math.min(Number(req.query.limit) || 200, 1000) }));
 });
 
 app.post('/api/server/:id/update', requireAdmin, async (req, res) => {
@@ -400,12 +433,12 @@ app.post('/api/server/:id/update', requireAdmin, async (req, res) => {
         // Run SteamCMD update (install)
         // We use the install method which runs app_update
         steamcmd.install(srv.appId, srv.path, (log) => {
-            io.emit(`update-log-${id}`, log);
+            toServer(id).emit(`update-log-${id}`, log);
         }).then(() => {
-            io.emit(`update-complete-${id}`, { success: true });
+            toServer(id).emit(`update-complete-${id}`, { success: true });
         }).catch((err) => {
             console.error('Update failed:', err);
-            io.emit(`update-complete-${id}`, { success: false, error: err.message });
+            toServer(id).emit(`update-complete-${id}`, { success: false, error: err.message });
         });
 
         res.json({ success: true, message: 'Update started' });
@@ -419,8 +452,10 @@ app.delete('/api/server/:id', requireAdmin, async (req, res) => {
     if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
 
     try {
+        audit(req, 'delete', serverStore.get(id));
         processManager.stop(id);
         await serverStore.remove(id);
+        schedulerService.removeForServer(id);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -507,6 +542,7 @@ app.post('/api/server/:id/file', requireAdmin, async (req, res) => {
         }
 
         await fs.writeFile(fullPath, content, 'utf8');
+        audit(req, 'file-save', srv, path.relative(srv.path, fullPath));
         res.json({ success: true, message: 'File saved (backup created)' });
     } catch (err) {
         res.status(err.status || 500).json({ error: err.message });
@@ -557,53 +593,117 @@ app.post('/api/server/:id/schedule', requireAdmin, async (req, res) => {
     }
 });
 
-// RCON Command Route
-app.post('/api/server/:id/command', async (req, res) => {
-    const { id } = req.params;
-    const { command } = req.body;
-    const srv = serverStore.get(id);
-
-    if (!srv) return res.status(404).json({ error: 'Server not found' });
-    if (!command) return res.status(400).json({ error: 'Command required' });
-
-    // Check if server is running
-    if (processManager.getStatus(id) !== 'running') {
-        return res.status(400).json({ error: 'Server is not running' });
-    }
-
+// RCON: send one console command to a running Source-style server.
+async function sendRcon(srv, command) {
+    if (processManager.getStatus(srv.id) !== 'running') throw Object.assign(new Error('Server is not running'), { status: 400 });
+    const Rcon = require('rcon-srcds').default;
+    let port = Number(srv.vars?.rconport || srv.vars?.port || srv.port) || 27015;
+    const portIndex = (srv.args || []).indexOf('+port');
+    if (portIndex !== -1 && srv.args[portIndex + 1]) port = parseInt(srv.args[portIndex + 1], 10);
+    const rcon = new Rcon({ host: '127.0.0.1', port, timeout: 5000 });
     try {
-        const Rcon = require('rcon-srcds').default;
+        await rcon.authenticate(srv.rconPassword || '');
+        return await rcon.execute(command);
+    } finally {
+        try { rcon.disconnect(); } catch { /* already closed */ }
+    }
+}
 
-        // Extract port from server args
-        let port = Number(srv.port) || 27015;
-        const portIndex = srv.args.indexOf('+port');
-        if (portIndex !== -1 && srv.args[portIndex + 1]) {
-            port = parseInt(srv.args[portIndex + 1]);
-        }
-
-        // Use RCON password from server config, or default
-        const rconPassword = srv.rconPassword || 'changeme';
-
-        console.log(`Sending RCON command to ${id} (localhost:${port}): ${command}`);
-
-        // Create RCON connection
-        const rcon = new Rcon({ host: 'localhost', port: port });
-
-        // Connect and authenticate
-        await rcon.authenticate(rconPassword);
-
-        // Send command
-        const response = await rcon.execute(command);
-
-        // Disconnect
-        rcon.disconnect();
-
+app.post('/api/server/:id/command', async (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    const command = typeof req.body?.command === 'string' ? req.body.command.trim() : '';
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    if (!command || command.length > 500 || /[\r\n]/.test(command)) return res.status(400).json({ error: 'Enter one command' });
+    try {
+        const response = await sendRcon(srv, command);
+        audit(req, 'command', srv, command.slice(0, 80));
         res.json({ success: true, response: response || 'Command executed (no response)' });
     } catch (err) {
-        console.error('RCON command failed:', err);
-        res.status(500).json({ error: err.message || 'RCON command failed' });
+        res.status(err.status || 500).json({ error: err.message || 'RCON command failed' });
     }
 });
+
+// Scheduled tasks (services/schedulerService.js). Anyone signed in can see a server's tasks; only admins change them.
+app.get('/api/server/:id/tasks', (req, res) => {
+    if (!serverStore.get(req.params.id)) return res.status(404).json({ error: 'Server not found' });
+    res.json({ types: schedulerService.TYPES, tasks: schedulerService.list(req.params.id) });
+});
+
+app.post('/api/server/:id/tasks', requireAdmin, (req, res) => {
+    const srv = serverStore.get(req.params.id);
+    if (!srv) return res.status(404).json({ error: 'Server not found' });
+    const { task, error } = schedulerService.validate(req.body, srv.id);
+    if (error) return res.status(400).json({ error });
+    try {
+        const added = schedulerService.add(task);
+        audit(req, 'task-add', srv, `${task.type} ${task.cron}`);
+        res.json(added);
+    } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
+    }
+});
+
+app.put('/api/tasks/:taskId', requireAdmin, (req, res) => {
+    const current = schedulerService.tasks.find(t => t.id === req.params.taskId);
+    if (!current) return res.status(404).json({ error: 'Task not found' });
+    const { task, error } = schedulerService.validate({ ...current, ...req.body }, current.serverId);
+    if (error) return res.status(400).json({ error });
+    res.json(schedulerService.update(current.id, task));
+});
+
+app.delete('/api/tasks/:taskId', requireAdmin, (req, res) => {
+    const current = schedulerService.tasks.find(t => t.id === req.params.taskId);
+    if (!current || !schedulerService.remove(current.id)) return res.status(404).json({ error: 'Task not found' });
+    audit(req, 'task-delete', serverStore.get(current.serverId), current.type);
+    res.json({ success: true });
+});
+
+app.post('/api/tasks/:taskId/run', requireAdmin, async (req, res) => {
+    const current = schedulerService.tasks.find(t => t.id === req.params.taskId);
+    if (!current) return res.status(404).json({ error: 'Task not found' });
+    audit(req, 'task-run', serverStore.get(current.serverId), current.type);
+    res.json(await schedulerService.run(current.id));
+});
+
+const pause = ms => new Promise(r => setTimeout(r, ms));
+
+// What each task type does. Throws on failure so the task's "last run" shows the reason.
+async function runTask(task) {
+    const srv = serverStore.get(task.serverId);
+    if (!srv) throw new Error('Server no longer exists');
+    const running = processManager.getStatus(srv.id) === 'running';
+    const log = line => toServer(srv.id).emit(`server-log-${srv.id}`, `\r\n\x1b[36m● ${line}\x1b[0m\r\n`);
+    auditLog.add({ user: 'scheduler', action: `task-${task.type}`, serverId: srv.id, server: srv.name, detail: task.label || task.cron });
+    switch (task.type) {
+        case 'start':
+            if (running) return 'Already running';
+            await startServer(srv); return 'Started';
+        case 'stop':
+            if (!running) return 'Already stopped';
+            processManager.stop(srv.id); await serverStore.updateStatus(srv.id, 'stopped'); return 'Stopped';
+        case 'restart':
+            log('Scheduled restart');
+            if (running) { processManager.stop(srv.id); await serverStore.updateStatus(srv.id, 'stopped'); await pause(5000); }
+            await startServer(srv); return 'Restarted';
+        case 'update':
+            log('Scheduled update');
+            if (running) { processManager.stop(srv.id); await serverStore.updateStatus(srv.id, 'stopped'); await pause(5000); }
+            await steamcmd.install(srv.appId, srv.path, line => toServer(srv.id).emit(`update-log-${srv.id}`, line));
+            if (running) await startServer(srv);
+            return running ? 'Updated and restarted' : 'Updated';
+        case 'backup': {
+            const b = await backupService.createBackup(srv);
+            await backupService.prune?.(srv.id, Number(process.env.BACKUP_KEEP) || 10);
+            return `Backup ${b.filename}`;
+        }
+        case 'command': {
+            const out = await sendRcon(srv, task.command);
+            return String(out || 'Sent').slice(0, 200);
+        }
+        default:
+            throw new Error('Unknown task');
+    }
+}
 
 // Template Routes
 app.get('/api/templates', (req, res) => {
@@ -645,7 +745,6 @@ app.delete('/api/templates/:gameId/:templateName', requireAdmin, async (req, res
 });
 
 // Backup Routes
-const backupService = require('./services/backupService');
 
 app.get('/api/server/:id/backups', async (req, res) => {
     const { id } = req.params;
@@ -665,6 +764,7 @@ app.post('/api/server/:id/backups', async (req, res) => {
 
     try {
         const backup = await backupService.createBackup(srv);
+        audit(req, 'backup', srv, backup.filename);
         res.json({ success: true, backup });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -686,6 +786,7 @@ app.post('/api/server/:id/backups/restore', requireAdmin, async (req, res) => {
         }
 
         await backupService.restoreBackup(srv, filename);
+        audit(req, 'restore', srv, filename);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -915,8 +1016,6 @@ app.delete('/api/server/:id/workshop/installed/:addonId', requireAdmin, async (r
 // Cache Management API Endpoints
 // ============================================
 
-const cacheService = require('./services/cacheService');
-
 // List all cached games
 app.get('/api/cache/list', async (req, res) => {
     try {
@@ -937,7 +1036,7 @@ app.post('/api/cache/download/:appId', requireAdmin, async (req, res) => {
     try {
         // Start download in background
         const result = await cacheService.downloadToCache(appId, gameName, (log) => {
-            io.emit(`cache-download-${appId}`, log);
+            io.to('admins').emit(`cache-download-${appId}`, log);
         });
         res.json(result);
     } catch (err) {
@@ -989,28 +1088,48 @@ app.post('/api/cache/copy/:appId', requireAdmin, async (req, res) => {
     }
 });
 
-const schedulerService = require('./services/schedulerService');
 
 // Initialize services
-schedulerService.init();
+schedulerService.init(runTask);
 settingsStore.load();
 
 // Socket.IO
+// Live updates go to rooms, so a user only receives logs for servers they can see.
 io.on('connection', (socket) => {
-    console.log('Client connected');
+    const user = socket.data.user;
+    if (user?.role === 'admin') socket.join('admins');
+    socket.on('watch', id => {
+        const srv = serverStore.get(String(id));
+        if (srv && access.can(user, srv, 'view')) socket.join(`srv:${srv.id}`);
+    });
+    socket.on('unwatch', id => socket.leave(`srv:${String(id)}`));
 });
+const toServer = id => io.to(`srv:${id}`);
 
 processManager.on('log', ({ id, data }) => {
-    io.emit(`server-log-${id}`, data);
+    toServer(id).emit(`server-log-${id}`, data);
 });
 
 processManager.on('status-change', async ({ id, status }) => {
     await serverStore.updateStatus(id, status);
-    io.emit(`server-status-${id}`, status);
+    toServer(id).emit(`server-status-${id}`, status);
+});
+
+// Crash recovery (processManager decides when; this restarts with the stored launch line).
+processManager.on('crashed', ({ id, code, attempt, willRestart }) => {
+    const srv = serverStore.get(id);
+    const msg = willRestart ? `Crashed (exit ${code}). Restarting in 10 seconds (try ${attempt} of 3)...` : `Crashed ${attempt} times in 10 minutes. Not restarting; check the console.`;
+    toServer(id).emit(`server-log-${id}`, `\r\n\x1b[31m● ${msg}\x1b[0m\r\n`);
+    auditLog.add({ user: 'system', action: willRestart ? 'crash-restart' : 'crash-gave-up', serverId: id, server: srv?.name || null, detail: `exit ${code}` });
+});
+processManager.on('restart-request', async ({ id }) => {
+    const srv = serverStore.get(id);
+    if (!srv || processManager.getStatus(id) === 'running') return;
+    try { await startServer(srv); } catch (err) { toServer(id).emit(`server-log-${id}`, `\r\n\x1b[31m● Restart failed: ${err.message}\x1b[0m\r\n`); }
 });
 
 processManager.on('stats', ({ id, stats }) => {
-    io.emit(`server-stats-${id}`, stats);
+    toServer(id).emit(`server-stats-${id}`, stats);
 });
 
 const queryService = require('./services/queryService');
@@ -1022,7 +1141,7 @@ setInterval(async () => {
         if (processManager.getStatus(srv.id) === 'running') {
             const result = await queryService.query(srv);
             if (result && result.online) {
-                io.emit(`server-query-${srv.id}`, result);
+                toServer(srv.id).emit(`server-query-${srv.id}`, result);
             }
         }
     }

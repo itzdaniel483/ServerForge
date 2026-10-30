@@ -184,11 +184,15 @@ async function socketAuth(socket, next) {
         const settings = await settingsStore.getSettings();
         if (settings.authMode === 'external') {
             const cfJwt = socket.handshake.headers['cf-access-jwt-assertion'];
-            if (!cfJwt) return next(process.env.ALLOW_DEV_AUTH === '1' ? undefined : new Error('unauthorized'));
-            await verifyCloudflareJWT(cfJwt, settings.cfAccessTeamDomain, settings.cfAccessAud);
+            if (!cfJwt) { if (process.env.ALLOW_DEV_AUTH !== '1') return next(new Error('unauthorized')); socket.data.user = { username: 'local_test_user', role: 'admin' }; return next(); }
+            const v = await verifyCloudflareJWT(cfJwt, settings.cfAccessTeamDomain, settings.cfAccessAud);
+            socket.data.user = { username: v.email || v.sub || 'cloudflare_user', role: 'admin' };
             return next();
         }
-        jwt.verify(String(socket.handshake.auth?.token || ''), JWT_SECRET, { algorithms: ['HS256'] });
+        const decoded = jwt.verify(String(socket.handshake.auth?.token || ''), JWT_SECRET, { algorithms: ['HS256'] });
+        const current = (await userStore.getUsers()).find(u => u.id === decoded.id);
+        if (!current) return next(new Error('unauthorized'));
+        socket.data.user = { id: current.id, username: current.username, role: current.role };
         return next();
     } catch {
         return next(new Error('unauthorized'));

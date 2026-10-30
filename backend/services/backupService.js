@@ -113,6 +113,14 @@ class BackupService {
     }
 
     /**
+     * Keep only the newest `keep` backups for a server (used by scheduled backups).
+     */
+    async prune(serverId, keep = 10) {
+        const list = await this.listBackups(serverId);
+        for (const old of list.slice(Math.max(1, keep))) await fs.remove(path.join(this.getBackupPath(serverId), old.filename));
+    }
+
+    /**
      * Delete a backup file
      */
     async deleteBackup(serverId, filename) {

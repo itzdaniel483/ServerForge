@@ -82,7 +82,7 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
                                     {s.owner && <span className="text-gray-400 truncate">Owner <span className="font-semibold text-gray-100">{s.owner}</span></span>}
                                 </div>
                                 <div className="mt-auto flex items-center gap-2">
-                                    {on ? (
+                                    {!(isAdmin || (s.perms || []).includes('power')) ? null : on ? (
                                         <>
                                             <Button variant="stop" size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop'])}><Square size={15} />Stop</Button>
                                             <Button size="sm" disabled={busy[s.id]} onClick={() => act(s.id, ['stop', 'start'])} title="Restart"><RotateCw size={15} />Restart</Button>

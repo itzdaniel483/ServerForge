@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Server, Download, Settings as SettingsIcon, LogOut, ChevronRight } from 'lucide-react';
+import { Server, Download, Settings as SettingsIcon, LogOut, ChevronRight, History } from 'lucide-react';
 import ServerList from './components/ServerList';
 import ServerControl from './components/ServerControl';
 import Installer from './components/Installer';
 import Settings from './components/Settings';
 import Login from './components/Login';
+import ActivityLog from './components/ActivityLog';
 import { setToken } from './api';
 
 // App shell (claude overhaul, 2026-10-30): full-width top bar instead of a sidebar, so every
@@ -69,7 +70,7 @@ function App() {
     const go = t => { setTab(t); setServer(null); };
     const nav = [
         { id: 'servers', label: 'Servers', icon: Server },
-        ...(user.role === 'admin' ? [{ id: 'installer', label: 'Install', icon: Download }, { id: 'settings', label: 'Settings', icon: SettingsIcon }] : []),
+        ...(user.role === 'admin' ? [{ id: 'installer', label: 'Install', icon: Download }, { id: 'activity', label: 'Activity', icon: History }, { id: 'settings', label: 'Settings', icon: SettingsIcon }] : []),
     ];
 
     return (
@@ -119,6 +120,7 @@ function App() {
                 {tab === 'servers' && server && <ServerControl server={server} isAdmin={user.role === 'admin'} onDeleted={() => setServer(null)} />}
                 {tab === 'installer' && <Installer onDone={() => go('servers')} />}
                 {tab === 'settings' && <Settings />}
+                {tab === 'activity' && <div className="space-y-6"><h1 className="text-3xl font-extrabold text-white">Activity</h1><ActivityLog /></div>}
             </main>
         </div>
     );

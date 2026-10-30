@@ -1,0 +1,39 @@
+# ServerForge checklist
+
+Goal (Daniel, #gamemanager 2026-10-30): a self-hosted game-server panel as close to TCAdmin as we can get.
+Owner: claude (codex out until 2026-11-28). Branch: `claude/overhaul`. **Nothing is pushed without Daniel's OK.**
+
+## Phase 0: security + UI (done 2026-10-30)
+- [x] Fixed public settings takeover, hard-coded JWT secret, admin/admin, user RCE via executable path, path traversal, open sockets/CORS
+- [x] Fixed crashes on missing SteamCMD, missing Workshop download, installer/file-save/template route mismatches
+- [x] New full-width UI (top bar, server cards, server page, installer)
+- [x] Runs on Linux (SteamCMD tarball, srcds_run, process groups)
+- [x] Test deploy: `app-serverforge` on http://192.168.55.216:3220 (exact devices only), in the server console
+
+## Phase 1: games + reliability
+- [x] Game catalogue `backend/catalog/games.json`: 34 games, 28 run on Linux; per-game settings (map, players, ports, world, password)
+- [x] Launch lines built server-side from validated settings (no shell, no client-chosen programs)
+- [x] Crash auto-restart (3 tries in 10 min, then stops and logs it)
+- [x] Live players/map query fixed (gamedig v5 import was wrong)
+- [x] `lib32gcc-s1` installed so Linux SteamCMD runs
+- [ ] Real install verified end to end (Valheim in progress)
+- [ ] Non-Steam games: Minecraft (Paper/Vanilla jar download), Terraria
+
+## Phase 2: hosting features
+- [x] Per-server access for users (start/stop, console, files, backups); users only see their servers
+- [x] Live logs per server (Socket.IO rooms), not broadcast to everyone
+- [x] Scheduled tasks: restart, start, stop, update, backup (keeps newest 10), console command
+- [x] Activity log (who did what, when), per server and global
+- [x] Settings tab with plain fields; raw launch line under Advanced
+- [ ] Email/Discord notifications on crash
+
+## Phase 3: player + server tools
+- [ ] Player list with kick/ban (RCON per game)
+- [ ] Config editor presets per game
+- [ ] Resource limits per server (CPU/RAM via systemd scopes)
+- [ ] Update checks (compare Steam build id)
+- [ ] Per-server SFTP/FTP access
+
+## Tests
+- `cd backend && npm test` (security, access, tasks, catalogue, crash recovery)
+- Browser walkthrough: desktop 1440, phone 390, admin and normal user

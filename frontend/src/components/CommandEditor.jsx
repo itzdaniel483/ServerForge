@@ -10,11 +10,6 @@ function CommandEditor({ serverId, serverData }) {
 
     const [port, setPort] = useState('27015');
 
-    // Schedule state
-    const [schedulePreset, setSchedulePreset] = useState('');
-    const [customSchedule, setCustomSchedule] = useState('');
-    const [savingSchedule, setSavingSchedule] = useState(false);
-
     useEffect(() => {
         if (serverData) {
             setExecutable(serverData.executable || '');
@@ -26,43 +21,9 @@ function CommandEditor({ serverId, serverData }) {
                 setPort(serverData.args[portIndex + 1]);
             }
 
-            // Schedule
-            const sched = serverData.restartSchedule;
-            if (sched) {
-                if (['0 4 * * *', '0 4 * * 0', '0 */6 * * *', '0 */12 * * *'].includes(sched)) {
-                    setSchedulePreset(sched);
-                } else {
-                    setSchedulePreset('custom');
-                    setCustomSchedule(sched);
-                }
-            } else {
-                setSchedulePreset('');
-            }
         }
     }, [serverData]);
 
-    const handlePresetChange = (val) => {
-        setSchedulePreset(val);
-        if (val !== 'custom') {
-            setCustomSchedule('');
-        }
-    };
-
-    const saveSchedule = async () => {
-        setSavingSchedule(true);
-        const schedule = schedulePreset === 'custom' ? customSchedule : schedulePreset;
-
-        try {
-            await axios.post(`/api/server/${serverId}/schedule`, {
-                schedule: schedule || null
-            });
-            alert('Schedule updated!');
-        } catch (err) {
-            alert(`Failed to update schedule: ${err.response?.data?.error || err.message}`);
-        } finally {
-            setSavingSchedule(false);
-        }
-    };
 
     const updatePort = (newPort) => {
         setPort(newPort);
@@ -212,53 +173,7 @@ function CommandEditor({ serverId, serverData }) {
                 </div>
             </div>
 
-            {/* Scheduled Restarts */}
-            <div className="bg-gray-900/50 rounded-xl border border-gray-700/30 p-6">
-                <h3 className="text-white font-bold text-lg mb-4 flex items-center">
-                    <Clock size={20} className="mr-2 text-purple-400" />
-                    Scheduled Restarts
-                </h3>
-
-                <div className="mb-4">
-                    <label className="block text-gray-400 text-sm mb-2">Restart Schedule</label>
-                    <div className="flex space-x-4">
-                        <select
-                            value={schedulePreset}
-                            onChange={(e) => handlePresetChange(e.target.value)}
-                            className="bg-gray-950 text-white px-4 py-2 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"
-                        >
-                            <option value="">No Schedule</option>
-                            <option value="0 4 * * *">Daily at 4:00 AM</option>
-                            <option value="0 4 * * 0">Weekly (Sunday at 4:00 AM)</option>
-                            <option value="0 */6 * * *">Every 6 Hours</option>
-                            <option value="0 */12 * * *">Every 12 Hours</option>
-                            <option value="custom">Custom Cron Expression</option>
-                        </select>
-
-                        {schedulePreset === 'custom' && (
-                            <input
-                                type="text"
-                                value={customSchedule}
-                                onChange={(e) => setCustomSchedule(e.target.value)}
-                                className="flex-1 bg-gray-950 text-white px-4 py-2 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none font-mono text-sm"
-                                placeholder="* * * * *"
-                            />
-                        )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                        Server will be stopped and restarted automatically.
-                    </p>
-                </div>
-
-                <button
-                    onClick={saveSchedule}
-                    disabled={savingSchedule}
-                    className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-6 py-2 rounded-lg flex items-center space-x-2 font-medium text-sm"
-                >
-                    <Save size={16} />
-                    <span>{savingSchedule ? 'Saving...' : 'Update Schedule'}</span>
-                </button>
-            </div>
+            {/* Scheduled restarts moved to the Schedule tab (claude, 2026-10-30) */}
         </div>
     );
 }

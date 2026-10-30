@@ -6,7 +6,8 @@ const pidusage = require('pidusage');
 class ProcessManager extends EventEmitter {
     constructor() {
         super();
-        this.processes = new Map(); // id → { process, logs, startTime }
+        this.processes = new Map(); // id → { process, logs, startTime, autoRestart, stopping }
+        this.crashes = new Map();   // id → recent crash times
         // CPU/RAM for each running server every 3s. The UI listened for these but nothing sent them.
         setInterval(() => {
             for (const [id, entry] of this.processes) {
@@ -22,7 +23,7 @@ class ProcessManager extends EventEmitter {
      * @param {Array<string>} args   Command‑line arguments
      * @param {string} cwd           Working directory (usually the server folder)
      */
-    start(id, executablePath, args = [], cwd) {
+    start(id, executablePath, args = [], cwd, env = {}, { autoRestart = false } = {}) {
         if (this.processes.has(id)) {
             throw new Error(`Process ${id} is already running.`);
         }
@@ -31,6 +32,7 @@ class ProcessManager extends EventEmitter {
 
         const child = spawn(executablePath, args, {
             cwd: cwd || path.dirname(executablePath),
+            env: { ...process.env, ...env },
             detached: true,
             windowsHide: false,               // keep console window visible
             stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin, capture stdout/stderr
@@ -44,7 +46,9 @@ class ProcessManager extends EventEmitter {
         const procEntry = {
             process: child,
             logs: [],
-            startTime: Date.now()
+            startTime: Date.now(),
+            autoRestart,
+            stopping: false
         };
         this.processes.set(id, procEntry);
 
@@ -68,10 +72,25 @@ class ProcessManager extends EventEmitter {
         });
 
         // When the process ends
-        child.on('close', code => {
-            console.log(`Process ${id} exited with code ${code}`);
+        child.on('close', (code, signal) => {
+            console.log(`Process ${id} exited with code ${code}${signal ? ` (${signal})` : ''}`);
+            const current = this.processes.get(id);
+            if (current && current.process !== child) return;   // an old run of a restarted server
             this.processes.delete(id);
             this.emit('status-change', { id, status: 'stopped', code });
+            // Crash recovery: restart if it wasn't stopped on purpose, at most 3 times in 10 minutes.
+            if (!procEntry.stopping && procEntry.autoRestart) {
+                const now = Date.now();
+                const recent = (this.crashes.get(id) || []).filter(t => now - t < 10 * 60 * 1000);
+                recent.push(now);
+                this.crashes.set(id, recent);
+                if (recent.length <= 3) {
+                    this.emit('crashed', { id, code, attempt: recent.length, willRestart: true });
+                    setTimeout(() => this.emit('restart-request', { id }), 10000).unref();
+                } else {
+                    this.emit('crashed', { id, code, attempt: recent.length, willRestart: false });
+                }
+            }
         });
 
         this.emit('status-change', { id, status: 'running' });
@@ -82,10 +101,15 @@ class ProcessManager extends EventEmitter {
     stop(id) {
         const entry = this.processes.get(id);
         if (!entry) return false;
+        entry.stopping = true;
+        this.crashes.delete(id);
         try {
             // Started detached, so on Linux/macOS signal the whole process group (the game spawns children).
             if (process.platform !== 'win32') process.kill(-entry.process.pid, 'SIGTERM');
             else process.kill(entry.process.pid);
+            // Games that ignore SIGTERM get SIGKILL after 15 seconds.
+            const pid = entry.process.pid;
+            setTimeout(() => { try { process.kill(process.platform !== 'win32' ? -pid : pid, 'SIGKILL'); } catch { /* already gone */ } }, 15000).unref();
         } catch (err) {
             console.error(`Failed to kill process ${id}:`, err);
         }

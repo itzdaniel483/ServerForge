@@ -3,12 +3,15 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import axios from 'axios';
-import { Play, Square, RotateCw, Terminal as TerminalIcon, FolderOpen, SlidersHorizontal, Archive, RefreshCw, Package, Copy, Trash2, Send } from 'lucide-react';
+import { Play, Square, RotateCw, Terminal as TerminalIcon, FolderOpen, SlidersHorizontal, Archive, RefreshCw, Package, Copy, Trash2, Send, CalendarClock, Users, History } from 'lucide-react';
 import FileManager from './FileManager';
-import CommandEditor from './CommandEditor';
+import ServerSettings from './ServerSettings';
 import BackupManager from './BackupManager';
 import UpdateManager from './UpdateManager';
 import PluginManager from './PluginManager';
+import TaskManager from './TaskManager';
+import AccessManager from './AccessManager';
+import ActivityLog from './ActivityLog';
 import { getSocket, errorText } from '../api';
 import { Button, Status, Stat, Notice } from '../ui';
 
@@ -46,6 +49,9 @@ function ServerControl({ server, isAdmin, onDeleted }) {
         window.addEventListener('resize', onResize);
 
         const socket = getSocket();
+        const watch = () => socket.emit('watch', id);   // join this server's live-log room
+        watch();
+        socket.on('connect', watch);
         const onLog = d => term.write(d);
         const onStatus = s => {
             setStatus(s);
@@ -62,6 +68,7 @@ function ServerControl({ server, isAdmin, onDeleted }) {
 
         return () => {
             window.removeEventListener('resize', onResize);
+            socket.off('connect', watch);
             socket.off(`server-log-${id}`, onLog);
             socket.off(`server-status-${id}`, onStatus);
             socket.off(`server-stats-${id}`, setStats);
@@ -121,12 +128,15 @@ function ServerControl({ server, isAdmin, onDeleted }) {
     }
 
     const on = status === 'running';
+    const perms = server.perms || [];
+    const may = p => isAdmin || perms.includes(p);
     const tabs = [
         { id: 'console', label: 'Console', icon: TerminalIcon },
-        { id: 'files', label: 'Files', icon: FolderOpen },
-        ...(isAdmin ? [{ id: 'config', label: 'Launch', icon: SlidersHorizontal }] : []),
-        { id: 'backups', label: 'Backups', icon: Archive },
-        ...(isAdmin ? [{ id: 'updates', label: 'Updates', icon: RefreshCw }, { id: 'plugins', label: 'Plugins', icon: Package }] : []),
+        ...(may('files') ? [{ id: 'files', label: 'Files', icon: FolderOpen }] : []),
+        ...(isAdmin ? [{ id: 'config', label: 'Settings', icon: SlidersHorizontal }] : []),
+        { id: 'tasks', label: 'Schedule', icon: CalendarClock },
+        ...(may('backups') ? [{ id: 'backups', label: 'Backups', icon: Archive }] : []),
+        ...(isAdmin ? [{ id: 'updates', label: 'Updates', icon: RefreshCw }, { id: 'plugins', label: 'Plugins', icon: Package }, { id: 'access', label: 'Access', icon: Users }, { id: 'activity', label: 'Activity', icon: History }] : []),
     ];
 
     return (
@@ -145,7 +155,7 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {on ? (
+                    {!may('power') ? null : on ? (
                         <>
                             <Button variant="stop" size="lg" onClick={() => power(['stop'])}><Square size={18} />Stop</Button>
                             <Button size="lg" onClick={() => power(['stop', 'start'])}><RotateCw size={18} />Restart</Button>
@@ -181,18 +191,21 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                     <div ref={terminalRef} className="h-[calc(100vh-480px)] min-h-[340px] p-3" />
                     <div className="border-t border-gray-800 p-3 flex items-center gap-2 bg-gray-900">
                         <span className="font-mono text-ember-400 font-bold">&gt;</span>
-                        <input value={command} onChange={e => setCommand(e.target.value)} onKeyDown={onKey} disabled={!on}
-                            placeholder={on ? 'Type a command (status, say, changelevel…)' : 'Start the server to send commands'}
+                        <input value={command} onChange={e => setCommand(e.target.value)} onKeyDown={onKey} disabled={!on || !may('console')}
+                            placeholder={!may('console') ? 'Read-only console' : on ? 'Type a command (status, say, changelevel…)' : 'Start the server to send commands'}
                             className="flex-1 h-10 bg-transparent text-white placeholder-gray-500 font-mono text-sm focus:outline-none disabled:cursor-not-allowed" />
-                        <Button variant="primary" size="sm" onClick={send} disabled={!on || !command.trim()}><Send size={15} />Send</Button>
+                        <Button variant="primary" size="sm" onClick={send} disabled={!on || !may('console') || !command.trim()}><Send size={15} />Send</Button>
                     </div>
                 </div>
             )}
             {tab === 'files' && <FileManager serverId={id} canEdit={isAdmin} />}
-            {tab === 'config' && <CommandEditor serverId={id} serverData={server} />}
+            {tab === 'config' && <ServerSettings server={server} />}
             {tab === 'backups' && <BackupManager serverId={id} canRestore={isAdmin} />}
             {tab === 'updates' && <UpdateManager server={server} />}
             {tab === 'plugins' && <PluginManager server={server} />}
+            {tab === 'tasks' && <TaskManager server={server} canEdit={isAdmin} />}
+            {tab === 'access' && <AccessManager server={server} />}
+            {tab === 'activity' && <ActivityLog serverId={id} />}
         </div>
     );
 }
