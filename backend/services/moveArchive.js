@@ -11,6 +11,26 @@ const CHUNK = 3 * 1024 * 1024, MAX = 1024 * 1024 * 1024;
 const fail = (m, status = 400) => Object.assign(new Error(m), { status, code: 'MOVE_INVALID' });
 const token = v => { if (typeof v !== 'string' || !/^[a-f0-9]{32}$/.test(v)) throw fail('Invalid move token'); return v; };
 const inside = (root, p) => { const rel = path.relative(root, p); return rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+// Symlink-safe (codex review #gamemanager 3614): a link inside the server folder (a game server can make one) must
+// not redirect an import's writes, or let an export read files from outside the folder. Every existing part of the
+// path below root is checked with lstat; a link anywhere is refused.
+function noLinks(root, target) {
+    let cur = root;
+    for (const part of path.relative(root, target).split(path.sep)) {
+        cur = path.join(cur, part);
+        let st; try { st = fs.lstatSync(cur); } catch (err) { if (err.code === 'ENOENT') return; throw err; }
+        if (st.isSymbolicLink()) throw fail(`Refusing to follow a link inside the server folder: ${path.relative(root, cur)}`);
+    }
+}
+// Add a folder to the zip without following links (adm-zip's addLocalFolder follows them).
+function addTree(zip, abs, rel, count) {
+    for (const ent of fs.readdirSync(abs, { withFileTypes: true })) {
+        const a = path.join(abs, ent.name), r = `${rel}/${ent.name}`;
+        if (ent.isSymbolicLink()) continue;
+        if (ent.isDirectory()) addTree(zip, a, r, count);
+        else if (ent.isFile()) { count.bytes += fs.statSync(a).size; if (count.bytes > MAX) throw fail('There is too much to move in one go (over 1 GB of configs/saves)'); zip.addLocalFile(a, path.posix.dirname(r)); }
+    }
+}
 
 // What survives a move: settings files and saves. Source games: cfg, data, addons, sv.db and downloaded gamemodes.
 function keepPaths(game) {
@@ -21,14 +41,19 @@ function keepPaths(game) {
 
 function exportServer(serverPath, keep) {
     fs.mkdirSync(DIR, { recursive: true });
-    const zip = new AdmZip(); let bytes = 0;
+    const zip = new AdmZip(); const count = { bytes: 0 };
+    const root = fs.realpathSync(serverPath);
     for (const rel of keep) {
-        const abs = path.resolve(serverPath, rel);
-        if (!inside(path.resolve(serverPath), abs) || !fs.existsSync(abs)) continue;
-        const st = fs.statSync(abs);
-        if (st.isDirectory()) zip.addLocalFolder(abs, rel); else zip.addLocalFile(abs, path.dirname(rel) === '.' ? '' : path.dirname(rel));
-        bytes += st.isDirectory() ? 0 : st.size;
-        if (bytes > MAX) throw fail('There is too much to move in one go (over 1 GB of configs/saves)');
+        const abs = path.resolve(root, rel);
+        if (!inside(root, abs) || !fs.existsSync(abs)) continue;
+        try { noLinks(root, abs); } catch { continue; }   // a linked keep path is skipped, never followed
+        const st = fs.lstatSync(abs);
+        if (st.isDirectory()) addTree(zip, abs, rel.split(path.sep).join('/'), count);
+        else if (st.isFile()) {
+            count.bytes += st.size;
+            if (count.bytes > MAX) throw fail('There is too much to move in one go (over 1 GB of configs/saves)');
+            zip.addLocalFile(abs, path.dirname(rel) === '.' ? '' : path.dirname(rel));
+        }
     }
     const id = crypto.randomBytes(16).toString('hex');
     const file = path.join(DIR, `out-${id}.zip`);
@@ -59,12 +84,18 @@ function receiveChunk({ token: t, offset, data, total }) {
 function importInto(serverPath, t) {
     const file = path.join(DIR, `in-${token(t)}.zip`);
     if (!fs.existsSync(file)) throw fail('Nothing received', 409);
-    const root = path.resolve(serverPath);
+    fs.mkdirSync(serverPath, { recursive: true });
+    const root = fs.realpathSync(serverPath);
     const zip = new AdmZip(file);
-    let count = 0;
-    for (const e of zip.getEntries()) {
+    // Check every entry before writing any, so a refused archive leaves nothing half-imported.
+    const plan = zip.getEntries().map(e => {
         const target = path.resolve(root, e.entryName);
         if (!inside(root, target)) throw fail(`Refusing archive entry outside the server folder: ${e.entryName}`);
+        noLinks(root, target);
+        return { e, target };
+    });
+    let count = 0;
+    for (const { e, target } of plan) {
         if (e.isDirectory) fs.mkdirSync(target, { recursive: true });
         else { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, e.getData()); count++; }
     }
