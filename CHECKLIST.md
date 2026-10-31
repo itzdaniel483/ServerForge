@@ -101,3 +101,15 @@ Design: docs/MULTI-NODE.md (claude). Backend protocol: codex. UI: claude.
 - [x] 5b. Daniel ran Setup; test update b7c113c227c0 applied by the button on real Windows; then game modes 7acfa48b3529
 - [ ] Daniel updates PC to 7288cc96a47b (move support) and tries a move
 - [ ] Move: carry schedules + access grants
+
+## Release review 2026-10-31 (codex)
+Owner for this release checklist: codex. Daniel approved the seven fixes plus today's dependencies on card 1898028128316425326 ("re-assigned codex. go for it").
+- [x] Reviewed seven commits 3fe9dd6..65025f3 plus user/session controls, remote plugins, Workshop move preservation, remove-original files, and cache updates.
+- [x] Checked admin gates, session invalidation, remote action allowlists, cache copy/update exclusion, and deletion restricted to stopped servers inside SERVERS_ROOT.
+- [x] Backend suite passed twice consecutively: 89/89 each. Second full log: /tmp/serverforge-release-test-2.log. Claude's earlier unidentified intermittent failure did not reproduce; this is not proof it is fixed.
+- [x] Frontend production build passed; Vite reports the existing >500 kB bundle warning. Diff whitespace checks passed.
+- [x] ServerForge service active and already registered in Server Console for lifecycle control.
+- [x] Excluded untracked artifacts/screenshots from the release.
+- [ ] Daniel's Windows check: actual plugin installation and a real Steam cache refresh remain unverified here.
+
+Release flow: Daniel approval → codex review + repeat tests → commit dependencies → push claude/overhaul → Daniel checks board outcome.

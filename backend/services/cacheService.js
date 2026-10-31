@@ -11,6 +11,9 @@ class CacheService {
         this.steam = steam;
         this.cache = {};
         this.jobs = new Map();
+        // Copies read directly from the cache directory. Keep the entry reserved until fs.copy
+        // finishes so an update or delete cannot mutate/remove its source mid-copy.
+        this.copying = new Set();
         this.deleting = new Set();
         this.ready = this.init();
     }
@@ -20,7 +23,7 @@ class CacheService {
         this.cache = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
         let changed = false;
         for (const entry of Object.values(this.cache)) {
-            if (entry.status === 'downloading' || entry.status === 'cancelling') {
+            if (entry.status === 'downloading' || entry.status === 'updating' || entry.status === 'cancelling') {
                 entry.status = 'interrupted';
                 entry.error = 'Download interrupted by panel restart. Retry to resume.';
                 changed = true;
@@ -41,17 +44,21 @@ class CacheService {
     async startDownload(appId, gameName, onProgress = () => {}) {
         await this.ready;
         appId = this.checkId(appId);
-        if (this.jobs.has(appId) || this.deleting.has(appId)) throw failure('Cache operation already in progress');
+        if (this.jobs.has(appId) || this.copying.has(appId) || this.deleting.has(appId)) throw failure('Cache operation already in progress');
         const controller = new AbortController();
         const job = { controller, completion: null, lastSaved: 0, tail: '' };
         job.completion = new Promise(resolve => { job.finish = resolve; });
         this.jobs.set(appId, job); // Reserve before the first await.
-        this.cache[appId] = { name: String(gameName || appId).slice(0, 120), status: 'downloading', progress: 0,
-            downloadedDate: null, lastChecked: new Date().toISOString(), diskSize: null, logs: '' };
+        const prior = this.cache[appId];
+        const nextEntry = { ...prior, name: String(gameName || prior?.name || appId).slice(0, 120),
+            status: prior?.status === 'ready' ? 'updating' : 'downloading', progress: 0,
+            downloadedDate: prior?.downloadedDate || null, lastChecked: new Date().toISOString(), diskSize: prior?.diskSize || null, logs: '' };
+        delete nextEntry.error;
+        this.cache[appId] = nextEntry;
         try { await this.saveCache(); }
-        catch (err) { this.jobs.delete(appId); delete this.cache[appId]; job.finish({ success: false }); throw err; }
+        catch (err) { this.jobs.delete(appId); if (prior) this.cache[appId] = prior; else delete this.cache[appId]; job.finish({ success: false }); throw err; }
         this.runDownload(appId, job, onProgress).then(job.finish);
-        return { success: true, status: 'downloading', appId };
+        return { success: true, status: this.cache[appId].status, appId };
     }
     async runDownload(appId, job, onProgress) {
         const entry = this.cache[appId];
@@ -100,14 +107,23 @@ class CacheService {
         return this.jobs.get(String(appId))?.completion || { success: this.cache[appId]?.status === 'ready' };
     }
     async copyFromCache(appId, targetPath) {
-        if (!await this.isCached(appId)) throw failure(`Game ${appId} is not cached. Please download it first.`, 400);
-        await fs.copy(await this.getCachePath(appId), targetPath, { overwrite: false, errorOnExist: false });
-        return { success: true };
+        await this.ready;
+        appId = this.checkId(appId);
+        if (this.jobs.has(appId) || this.copying.has(appId) || this.deleting.has(appId)) throw failure('Cache operation already in progress');
+        if (this.cache[appId]?.status !== 'ready') throw failure(`Game ${appId} is not cached. Please download it first.`, 400);
+        this.copying.add(appId);
+        try {
+            // Recheck after reserving; this also keeps behavior correct if operations become async
+            // between the check and reservation in a future implementation.
+            if (this.cache[appId]?.status !== 'ready') throw failure(`Game ${appId} is not cached. Please download it first.`, 400);
+            await fs.copy(await this.getCachePath(appId), targetPath, { overwrite: false, errorOnExist: false });
+            return { success: true };
+        } finally { this.copying.delete(appId); }
     }
     async deleteCache(appId) {
         await this.ready;
         appId = this.checkId(appId);
-        if (this.jobs.has(appId) || this.deleting.has(appId)) throw failure('Cannot delete cache while an operation is running');
+        if (this.jobs.has(appId) || this.copying.has(appId) || this.deleting.has(appId)) throw failure('Cannot delete cache while an operation is running');
         this.deleting.add(appId);
         try {
             await fs.remove(await this.getCachePath(appId));

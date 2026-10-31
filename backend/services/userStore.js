@@ -62,6 +62,7 @@ class UserStore extends EventEmitter {
             username,
             passwordHash,
             role,
+            disabled: false,
             sessionVersion: 0,
             createdAt: new Date().toISOString()
         };
@@ -84,7 +85,7 @@ class UserStore extends EventEmitter {
         const isValid = await bcrypt.compare(password, passwordHash);
         // A rotation may complete while bcrypt yields. Never mint a new-version
         // token for credentials checked against the previous hash.
-        if (!isValid || user.passwordHash !== passwordHash || (user.sessionVersion ?? 0) !== sessionVersion) return null;
+        if (!isValid || user.disabled === true || user.passwordHash !== passwordHash || (user.sessionVersion ?? 0) !== sessionVersion) return null;
 
         return { id: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion ?? 0 };
     }
@@ -95,6 +96,7 @@ class UserStore extends EventEmitter {
             id: u.id,
             username: u.username,
             role: u.role,
+            disabled: u.disabled === true,
             sessionVersion: u.sessionVersion ?? 0,
             createdAt: u.createdAt
         }));
@@ -108,14 +110,50 @@ class UserStore extends EventEmitter {
         // Prevent deleting the last admin
         const user = this.users[index];
         if (user.role === 'admin') {
-            const adminCount = this.users.filter(u => u.role === 'admin').length;
-            if (adminCount <= 1) {
-                throw new Error('Cannot delete the last admin user');
-            }
+            const remainingActiveAdmins = this.users.filter(u => u.id !== user.id && u.role === 'admin' && u.disabled !== true).length;
+            if (remainingActiveAdmins < 1) throw new Error('Cannot delete the last active admin user');
         }
 
         this.users.splice(index, 1);
         await this.save();
+    }
+
+    async updateUser(id, patch) {
+        await this.init();
+        const user = this.users.find(u => u.id === id);
+        if (!user) throw new Error('User not found');
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid user update');
+        const keys = Object.keys(patch);
+        if (!keys.length || keys.some(key => !['role', 'disabled'].includes(key))) throw new Error('Only role and disabled can be updated');
+        if ('role' in patch && !['admin', 'user'].includes(patch.role)) throw new Error('Role must be admin or user');
+        if ('disabled' in patch && typeof patch.disabled !== 'boolean') throw new Error('Disabled must be true or false');
+
+        const nextRole = patch.role ?? user.role;
+        const nextDisabled = patch.disabled ?? (user.disabled === true);
+        const activeAdminsAfterUpdate = this.users.filter(u => u.id !== user.id && u.role === 'admin' && u.disabled !== true).length
+            + (nextRole === 'admin' && !nextDisabled ? 1 : 0);
+        if (activeAdminsAfterUpdate < 1) throw new Error('Cannot demote or disable the last active admin user');
+        if (user.role === nextRole && (user.disabled === true) === nextDisabled) {
+            return { id: user.id, username: user.username, role: user.role, disabled: nextDisabled, sessionVersion: user.sessionVersion ?? 0, createdAt: user.createdAt };
+        }
+
+        user.role = nextRole;
+        user.disabled = nextDisabled;
+        user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+        await this.save();
+        return { id: user.id, username: user.username, role: user.role, disabled: user.disabled, sessionVersion: user.sessionVersion, createdAt: user.createdAt };
+    }
+
+    async resetPassword(id, newPassword) {
+        await this.init();
+        const user = this.users.find(u => u.id === id);
+        if (!user) throw new Error('User not found');
+        if (typeof newPassword !== 'string' || newPassword.length < 8) throw new Error('Password must be at least 8 characters');
+        const passwordHash = await bcrypt.hash(newPassword, await bcrypt.genSalt(10));
+        user.passwordHash = passwordHash;
+        user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+        await this.save();
+        return { success: true };
     }
 
     async changePassword(userId, currentPassword, newPassword) {

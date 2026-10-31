@@ -102,7 +102,15 @@ class PluginService {
         // 3. Extract
         console.log(`[Plugin] Extracting to ${targetDir}...`);
         const zip = new AdmZip(zipPath);
-        zip.extractAllTo(targetDir, true);
+        if (pluginConfig.type === 'direct') {
+            // GitHub zips wrap everything in "<repo>-master/"; Garry's Mod only loads addons/<name>/.
+            const unpacked = path.join(tempDir, 'unpacked');
+            zip.extractAllTo(unpacked, true);
+            const [top] = await fs.readdir(unpacked);
+            await fs.move(path.join(unpacked, top), path.join(targetDir, 'addons', pluginId), { overwrite: true });
+        } else {
+            zip.extractAllTo(targetDir, true);
+        }
 
         // 4. Cleanup
         await fs.remove(tempDir);
@@ -131,11 +139,11 @@ class PluginService {
 
         // Get API key from global settings
         const settingsStore = require('./settingsStore');
-        const settings = settingsStore.getAll();
+        const settings = await settingsStore.getSettings();
         const apiKey = settings.steamApiKey;
 
         // Update server args
-        let args = [...server.args];
+        let args = [...(server.args || [])];
 
         // Remove existing workshop args
         const removeArgs = ['+host_workshop_collection', '-authkey'];
@@ -154,12 +162,7 @@ class PluginService {
             args.push('-authkey', apiKey);
         }
 
-        // Save server
-        server.args = args;
-        // Save collection ID for UI retrieval
-        server.workshopCollectionId = collectionId;
-
-        serverStore.update(server.id, server);
+        await serverStore.update(server.id, { args, workshopCollectionId: collectionId });
         return { success: true };
     }
 

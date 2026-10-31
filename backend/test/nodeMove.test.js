@@ -29,7 +29,7 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
             const game = path.join(dir, 'servers', 'fixture'); fs.mkdirSync(game);
             fs.writeFileSync(path.join(game, 'run.sh'), '#!/bin/sh\nwhile true; do echo federation-tick; sleep 0.2; done\n', { mode: 0o755 });
             fs.writeFileSync(path.join(game, 'config.txt'), 'original'); fs.mkdirSync(path.join(game, 'tf', 'cfg'), { recursive: true }); fs.writeFileSync(path.join(game, 'tf', 'cfg', 'server.cfg'), 'hostname "Moved across"');
-            fs.writeFileSync(path.join(dir, 'data', 'servers.json'), JSON.stringify([{ id: 'sameid', name: 'Fixture', game: 'Team Fortress 2', gameId: 'tf2', appId: '232250', path: game, executable: 'run.sh', args: [], port: 29099, vars: { name: 'Fixture', port: 29099, password: 'node-private-secret' }, rconPassword: 'node-rcon-secret', owner: 'player', access: [{ username: 'player', perms: ['power'] }], status: 'stopped' }]));
+            fs.writeFileSync(path.join(dir, 'data', 'servers.json'), JSON.stringify([{ id: 'sameid', workshopCollectionId: '1234567', name: 'Fixture', game: 'Team Fortress 2', gameId: 'tf2', appId: '232250', path: game, executable: 'run.sh', args: [], port: 29099, vars: { name: 'Fixture', port: 29099, password: 'node-private-secret' }, rconPassword: 'node-rcon-secret', owner: 'player', access: [{ username: 'player', perms: ['power'] }], status: 'stopped' }]));
         }
         const port = await freePort();
         const env = { ...process.env, NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port), NODE_PORT: '', APP_URL: '', JWT_SECRET: '', ADMIN_PASSWORD: PASSWORD,
@@ -88,12 +88,14 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         assert.equal(fs.readFileSync(path.join(rec.path, 'tf', 'cfg', 'server.cfg'), 'utf8'), 'hostname "Moved across"');
         assert.match(fs.readFileSync(path.join(rec.path, 'srcds_run'), 'utf8'), /cached-game-tick/, 'files came from the destination cache');
         assert.equal(fs.existsSync(path.join(rec.path, 'steam-fixture.txt')), false, 'SteamCMD was not run for the cached move');
+        assert.equal(rec.workshopCollectionId, '1234567', 'Workshop collection copied'); assert.ok(rec.args.includes('+host_workshop_collection') && rec.args.includes('1234567'), JSON.stringify(rec.args));
         assert.deepEqual(rec.access, [{ username: 'mover', perms: ['view', 'power', 'console'] }], 'access copied');
         const tasks = (await hub.api('GET', `/api/server/${job.newServerId}/tasks`, undefined, hub.token)).data.tasks;
         assert.deepEqual(tasks.map(t => [t.type, t.cron, t.command, t.label, t.enabled]), [['command', '0 6 * * *', 'say morning', 'Morning hello', true]], 'schedule copied');
         assert.ok(job.log.some(l => /Copied 1 schedule\./.test(l)) && job.log.some(l => /Copied access for 1 user\./.test(l)), JSON.stringify(job.log));
         assert.deepEqual(job.warnings, []);
-        assert.equal((await hub.api('POST', `/api/moves/${start.data.moveId}/finish`, { removeSource: true }, hub.token)).status, 200);
+        const finished = await hub.api('POST', `/api/moves/${start.data.moveId}/finish`, { removeSource: true }, hub.token);
+        assert.equal(finished.status, 200); assert.equal(finished.data.filesRemoved, true, 'original game files removed');
         for (let i = 0; i < 50 && (await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId); i++) await pause(200);
         assert.equal((await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId), false, 'original removed');
         await hub.api('POST', '/api/server/stop', { id: job.newServerId }, hub.token);

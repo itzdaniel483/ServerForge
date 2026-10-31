@@ -119,6 +119,43 @@ function UserManager() {
         }
     };
 
+    let me = '';
+    try { me = JSON.parse(localStorage.getItem('user') || '{}').username || ''; } catch { /* no stored user */ }
+    const [resetFor, setResetFor] = useState(null);
+    const [resetPassword, setResetPassword] = useState('');
+    const [status, setStatus] = useState(null);
+    const failed = (err, fallback) => setStatus({ ok: false, text: err.response?.data?.error || fallback });
+
+    const updateUser = async (user, patch, done) => {
+        setStatus(null);
+        try {
+            await axios.patch(`/api/users/${user.id}`, patch);
+            setStatus({ ok: true, text: done });
+            fetchUsers();
+        } catch (err) {
+            failed(err, 'Could not update the user');
+            fetchUsers();
+        }
+    };
+
+    const toggleDisabled = (user) => {
+        if (!user.disabled && !confirm(`Disable ${user.username}? They are signed out straight away.`)) return;
+        updateUser(user, { disabled: !user.disabled }, user.disabled ? `${user.username} can sign in again.` : `${user.username} is disabled.`);
+    };
+
+    const submitReset = async (e, user) => {
+        e.preventDefault();
+        setStatus(null);
+        try {
+            await axios.post(`/api/users/${user.id}/reset-password`, { newPassword: resetPassword });
+            setResetFor(null);
+            setResetPassword('');
+            setStatus({ ok: true, text: `Password changed for ${user.username}. They are signed out everywhere.` });
+        } catch (err) {
+            failed(err, 'Could not reset the password');
+        }
+    };
+
     const handleDeleteUser = async (id, username) => {
         if (!confirm(`Are you sure you want to delete user ${username}?`)) return;
         try {
@@ -150,20 +187,44 @@ function UserManager() {
                     </div>
                 </form>
             )}
+            {status && <div className="p-4 border-b border-gray-800"><Notice tone={status.ok ? 'ok' : 'error'}>{status.text}</Notice></div>}
             {loading ? <div className="p-4 text-sm text-gray-400">Loading…</div> : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                        <thead><tr><th className="th">User</th><th className="th">Role</th><th className="th hidden sm:table-cell">Created</th><th className="th text-right">Actions</th></tr></thead>
+                        <thead><tr><th className="th">User</th><th className="th">Role</th><th className="th">Status</th><th className="th hidden sm:table-cell">Created</th><th className="th text-right">Actions</th></tr></thead>
                         <tbody>
                             {users.map(user => (
-                                <tr key={user.id} className="hover:bg-gray-800/40">
-                                    <td className="td font-medium text-white">{user.username}</td>
-                                    <td className="td"><span className={`inline-flex h-5 px-1.5 items-center rounded-sm border text-[12px] capitalize ${user.role === 'admin' ? 'border-accent-500/50 text-accent-300' : 'border-gray-700 text-gray-300'}`}>{user.role}</span></td>
+                                <React.Fragment key={user.id}>
+                                <tr className="hover:bg-gray-800/40">
+                                    <td className="td font-medium text-white">{user.username}{user.username === me && <span className="ml-2 font-normal text-gray-500">you</span>}</td>
+                                    <td className="td">
+                                        {user.username === me
+                                            ? <span className="capitalize text-gray-300">{user.role}</span>
+                                            : <select aria-label={`Role for ${user.username}`} value={user.role} onChange={e => updateUser(user, { role: e.target.value }, `${user.username} is now ${e.target.value === 'admin' ? 'an admin' : 'a user'}.`)} className={`${inputClass} w-auto h-8 py-0`}>
+                                                <option value="user">User</option>
+                                                <option value="admin">Admin</option>
+                                            </select>}
+                                    </td>
+                                    <td className="td">{user.disabled ? <span className="text-stop-300">Disabled</span> : <span className="text-gray-300">Active</span>}</td>
                                     <td className="td hidden sm:table-cell text-gray-400">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</td>
-                                    <td className="td text-right">
-                                        <Button size="sm" variant="quiet" onClick={() => handleDeleteUser(user.id, user.username)} title="Delete user" aria-label={`Delete user ${user.username}`}><Trash2 size={13} /></Button>
+                                    <td className="td text-right whitespace-nowrap">
+                                        {user.username !== me && <>
+                                            <Button size="sm" variant="quiet" onClick={() => { setResetFor(resetFor === user.id ? null : user.id); setResetPassword(''); setStatus(null); }}>Reset password</Button>
+                                            <Button size="sm" variant="quiet" onClick={() => toggleDisabled(user)}>{user.disabled ? 'Enable' : 'Disable'}</Button>
+                                            <Button size="sm" variant="quiet" onClick={() => handleDeleteUser(user.id, user.username)} title="Delete user" aria-label={`Delete user ${user.username}`}><Trash2 size={13} /></Button>
+                                        </>}
                                     </td>
                                 </tr>
+                                {resetFor === user.id && (
+                                    <tr><td className="td" colSpan={5}>
+                                        <form onSubmit={e => submitReset(e, user)} className="flex flex-wrap gap-2 items-end">
+                                            <Field label={`New password for ${user.username}`}><input type="password" autoFocus autoComplete="new-password" minLength={8} required value={resetPassword} onChange={e => setResetPassword(e.target.value)} className={inputClass} /></Field>
+                                            <Button type="submit" variant="primary">Set password</Button>
+                                            <Button type="button" variant="quiet" onClick={() => setResetFor(null)}>Cancel</Button>
+                                        </form>
+                                    </td></tr>
+                                )}
+                                </React.Fragment>
                             ))}
                         </tbody>
                     </table>

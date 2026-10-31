@@ -11,7 +11,7 @@ import { getSocket, errorText, stripAnsi } from '../api';
 import { OsIcon } from '../nodes';
 import { osLabel } from '../nodeUtils';
 
-const BUSY = ['downloading', 'cancelling', 'deleting'];
+const BUSY = ['downloading', 'updating', 'cancelling', 'deleting'];
 const RESUMABLE = ['interrupted', 'cancelled', 'error'];
 
 export default function CacheManager() {
@@ -118,9 +118,10 @@ function CacheRow({ game, entry, pending, nodeId, onDownload, onCancel, onDelete
 
     const label = {
         downloading: `Downloading ${Math.round(entry?.progress || 0)}%`,
+        updating: `Updating ${Math.round(entry?.progress || 0)}%`,
         cancelling: 'Cancelling…',
         deleting: 'Deleting…',
-        ready: `Cached${entry?.diskSize ? ` · ${entry.diskSize}` : ''}${entry?.downloadedDate ? ` · ${new Date(entry.downloadedDate).toLocaleDateString()}` : ''}`,
+        ready: `Cached${entry?.diskSize ? ` · ${entry.diskSize}` : ''}${entry?.downloadedDate ? ` · updated ${new Date(entry.downloadedDate).toLocaleDateString()}` : ''}`,
         interrupted: 'Interrupted',
         cancelled: 'Cancelled',
         error: 'Failed',
@@ -139,13 +140,14 @@ function CacheRow({ game, entry, pending, nodeId, onDownload, onCancel, onDelete
                 </div>
                 <div className="flex items-center gap-2">
                     {busy && <Button size="sm" variant="quiet" onClick={() => setShowLog(s => !s)} aria-expanded={showLog}>Log<ChevronDown size={15} className={showLog ? 'rotate-180' : ''} /></Button>}
-                    {status === 'downloading' && <Button size="sm" variant="stop" disabled={pending} onClick={() => onCancel(game)}><X size={15} />Cancel</Button>}
+                    {(status === 'downloading' || status === 'updating') && <Button size="sm" variant="stop" disabled={pending} onClick={() => onCancel(game)}><X size={15} />Cancel</Button>}
                     {RESUMABLE.includes(status) && <Button size="sm" variant="primary" disabled={pending} onClick={() => onDownload(game)}><RotateCw size={15} />Resume</Button>}
                     {status === 'not_cached' && <Button size="sm" variant="primary" disabled={pending} onClick={() => onDownload(game)}><Download size={15} />Download</Button>}
+                    {status === 'ready' && <Button size="sm" variant="ghost" disabled={pending} onClick={() => onDownload(game)} title="Get the latest version from Steam"><RotateCw size={15} />Update</Button>}
                     {(status === 'ready' || RESUMABLE.includes(status)) && <Button size="sm" variant="ghost" disabled={pending} onClick={() => onDelete(game)} title="Delete cached files" aria-label={`Delete cached ${game.name}`}><Trash2 size={15} /></Button>}
                 </div>
             </div>
-            {status === 'downloading' && <Meter value={entry?.progress || 0} label={`${game.name} download`} className="mx-4 mb-3" />}
+            {(status === 'downloading' || status === 'updating') && <Meter value={entry?.progress || 0} label={`${game.name} download`} className="mx-4 mb-3" />}
             {busy && showLog && (
                 <pre className="mx-4 mb-4 h-48 overflow-auto rounded-xl bg-gray-950/80 border border-gray-800 p-3 font-mono text-xs text-gray-300 whitespace-pre-wrap">{log || 'Waiting for SteamCMD output…'}</pre>
             )}

@@ -9,7 +9,7 @@ const { ACTIONS, sendPacket, createDecoder } = require('./nodeProtocol');
 const NODE_PATH = '/node/v1/connect';
 const allowedActions = new Set(ACTIONS);
 const readActions = new Set(['servers.list', 'host', 'catalog', 'server.status', 'console.read', 'files.read', 'backups.list',
-    'tasks.list', 'settings.read', 'launch.read', 'launch.preview', 'update.status', 'machine.info', 'move.read', 'cache.list', 'cache.status', 'templates.list', 'templates.read']);
+    'tasks.list', 'settings.read', 'plugins.list', 'launch.read', 'launch.preview', 'update.status', 'machine.info', 'move.read', 'cache.list', 'cache.status', 'templates.list', 'templates.read']);
 const streamEvents = new Set(['server-log', 'server-status', 'server-stats', 'server-query', 'install-log', 'cache-download', 'update-log', 'update-complete']);
 const rpcError = (message, status, code) => Object.assign(new Error(message), { status, code });
 

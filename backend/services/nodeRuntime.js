@@ -10,7 +10,7 @@ const { writeJsonSync } = require('./jsonFile');
 const MAX_RESPONSE = 8 * 1024 * 1024 - 4096;
 const MAX_BODY = 5 * 1024 * 1024;
 const problem = (message, code = 'NODE_REQUEST_INVALID', status = 400) => Object.assign(new Error(message), { code, status });
-const snapshotFields = ['id', 'name', 'game', 'gameId', 'appId', 'port', 'status', 'players', 'maxPlayers', 'installError'];
+const snapshotFields = ['workshopCollectionId', 'id', 'name', 'game', 'gameId', 'appId', 'port', 'status', 'players', 'maxPlayers', 'installError'];
 function sanitizeServer(server) { return Object.fromEntries(snapshotFields.filter(field => Object.hasOwn(server, field)).map(field => [field, server[field]])); }
 function localApiTarget(value) {
     const supplied = value || process.env.NODE_LOCAL_API_URL;

@@ -513,7 +513,7 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
     if (targetNodeId !== 'local' && !nodeRegistry.list().some(n => n.id === targetNodeId)) return res.status(404).json({ error: 'Unknown machine', code: 'NODE_UNKNOWN' });
     const call = await moveCaller(req);
     const moveId = crypto.randomBytes(8).toString('hex');
-    const job = { id: moveId, serverId, targetNodeId, step: 'stopping', progress: 0, log: [], error: null, newServerId: null, wasRunning: false };
+    const job = { id: moveId, serverId, targetNodeId, step: 'stopping', progress: 0, log: [], error: null, newServerId: null, wasRunning: false, warnings: [] };
     const log = line => { job.log.push(line); if (job.log.length > 200) job.log.shift(); };
     moveJobs.set(moveId, job);
     audit(req, 'move', null, `${serverId} → ${targetNodeId}`);
@@ -566,6 +566,13 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         }
         const imported = await call(targetNodeId, 'POST', `/api/server/${created}/import`, { token: archive.token });
         log(`Copied ${imported.files} files.`);
+        // The Workshop collection lives in launch settings, not in the copied files. Set it before the first start.
+        if (/^\d{1,20}$/.test(String(srv.workshopCollectionId || ''))) {
+            try {
+                await call(targetNodeId, 'POST', `/api/server/${created}/workshop`, { collectionId: String(srv.workshopCollectionId) });
+                log(`Copied Workshop collection ${srv.workshopCollectionId}.`);
+            } catch (err) { job.warnings.push('workshop'); log(`The Workshop collection was not copied (${err.message}); set it again on the new server.`); }
+        }
         job.step = 'verifying'; job.progress = 90;
         log('Starting it on the new machine…');
         await call(targetNodeId, 'POST', '/api/server/start', { id: created });
@@ -575,7 +582,6 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         log('Running on the new machine.');
         // Schedules and who-can-use-it come along too (checklist). The server is already running, so a problem
         // here is reported in the log (and job.warnings), not treated as a failed move.
-        job.warnings = [];
         try {
             const { tasks = [] } = (await call(src.node, 'GET', `/api/server/${src.id}/tasks`)) || {};
             for (const t of tasks) await call(targetNodeId, 'POST', `/api/server/${created}/tasks`, { type: t.type, cron: t.cron, command: t.command || '', label: t.label || '', enabled: t.enabled !== false });
@@ -599,8 +605,10 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         if (archive?.token) { for (const side of [src.node, targetNodeId]) { try { await call(side, 'DELETE', `/api/move-archive/${archive.token}`); } catch { /* temp file */ } } }
     }
     job.finish = async removeSource => {
-        if (removeSource) await call(src.node, 'DELETE', `/api/server/${src.id}`);
+        // Daniel: removing the original takes its game files too. The delete route refuses to touch a running server's files.
+        const removed = removeSource ? await call(src.node, 'DELETE', `/api/server/${src.id}`, { removeFiles: true }) : null;
         job.step = 'finished';
+        return { filesRemoved: removed?.filesRemoved === true };
     };
 });
 app.get('/api/moves/:id', requireAdmin, (req, res) => {
@@ -610,7 +618,7 @@ app.get('/api/moves/:id', requireAdmin, (req, res) => {
 app.post('/api/moves/:id/finish', requireAdmin, async (req, res) => {
     const job = moveJobs.get(req.params.id); if (!job) return res.status(404).json({ error: 'Unknown move' });
     if (job.step !== 'done' || !job.finish) return res.status(409).json({ error: 'The move has not finished yet' });
-    try { await job.finish(req.body?.removeSource === true); audit(req, 'move-finish', null, `${job.serverId} removeSource=${req.body?.removeSource === true}`); res.json({ success: true }); }
+    try { const finished = await job.finish(req.body?.removeSource === true); audit(req, 'move-finish', null, `${job.serverId} removeSource=${req.body?.removeSource === true} filesRemoved=${finished.filesRemoved}`); res.json({ filesRemoved: finished.filesRemoved, success: true }); }
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 

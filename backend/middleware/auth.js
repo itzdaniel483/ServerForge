@@ -167,7 +167,7 @@ const authMiddleware = async (req, res, next) => {
             const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
             // Use the stored role, so a deleted or demoted user's old token stops working.
             const current = (await userStore.getUsers()).find(u => u.id === decoded.id);
-            if (!current || (decoded.sessionVersion ?? 0) !== current.sessionVersion) return res.status(401).json({ error: 'Invalid token' });
+            if (!current || current.disabled || (decoded.sessionVersion ?? 0) !== current.sessionVersion) return res.status(401).json({ error: 'Invalid token' });
             req.user = { id: current.id, username: current.username, role: current.role };
             if (current.role === 'admin' && decoded.hubActor && typeof decoded.hubActor.username === 'string' && decoded.hubActor.username.length <= 128) {
                 req.hubActor = { id: String(decoded.hubActor.id || '').slice(0, 128), username: decoded.hubActor.username,
@@ -196,7 +196,7 @@ async function socketAuth(socket, next) {
         }
         const decoded = jwt.verify(String(socket.handshake.auth?.token || ''), JWT_SECRET, { algorithms: ['HS256'] });
         const current = (await userStore.getUsers()).find(u => u.id === decoded.id);
-        if (!current || (decoded.sessionVersion ?? 0) !== current.sessionVersion) return next(new Error('unauthorized'));
+        if (!current || current.disabled || (decoded.sessionVersion ?? 0) !== current.sessionVersion) return next(new Error('unauthorized'));
         socket.data.user = { id: current.id, username: current.username, role: current.role, sessionVersion: current.sessionVersion };
         return next();
     } catch {

@@ -50,7 +50,11 @@ function MoveDialog({ server, onClose, onMoved }) {
     }
     async function finish(removeSource) {
         setFinishing(true); setError('');
-        try { await axios.post(`/api/moves/${encodeURIComponent(move.id)}/finish`, { removeSource }); onMoved?.(); onClose(); }
+        try {
+            const { data } = await axios.post(`/api/moves/${encodeURIComponent(move.id)}/finish`, { removeSource });
+            if (removeSource && !data.filesRemoved) alert("The old server is gone from the list, but its game files couldn't be removed. They're still on the old machine.");
+            onMoved?.(); onClose();
+        }
         catch (err) { setError(errorText(err)); setFinishing(false); }
     }
 
@@ -101,8 +105,8 @@ function MoveDialog({ server, onClose, onMoved }) {
                             {move.step === 'done' && move.warnings?.length > 0 && <p className="text-xs text-warn-300">Moved, but {move.warnings.join(' and ')} could not be copied. Set {move.warnings.length > 1 ? 'them' : 'it'} again on the new server.</p>}
                             {move.step === 'done' ? (
                                 <div className="space-y-2">
-                                    <p className="text-sm text-go-200">It's running on {targetNode?.name || 'the new machine'}. Remove the old copy?</p>
-                                    <div className="flex justify-end gap-2"><Button disabled={finishing} onClick={() => finish(false)}>Keep both</Button><Button variant="stop" disabled={finishing} onClick={() => finish(true)}>Remove old copy</Button></div>
+                                    <p className="text-sm text-go-200">It's running on {targetNode?.name || 'the new machine'}. Remove the old copy and its game files?</p>
+                                    <div className="flex justify-end gap-2"><Button disabled={finishing} onClick={() => finish(false)}>Keep both</Button><Button variant="stop" disabled={finishing} onClick={() => finish(true)}>Remove old copy and files</Button></div>
                                 </div>
                             ) : move.step === 'failed' ? <div className="flex justify-end"><Button onClick={onClose}>Close</Button></div> : null}
                         </>

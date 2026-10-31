@@ -65,6 +65,18 @@ test('two real panels federate list, ACLs, files, power/streams, tasks, backups,
         assert.equal((await hub.api('POST', '/api/server/start', { id }, user)).status, 403);
         assert.equal((await hub.api('PUT', `/api/server/${id}/access`, { access: [{ username: 'player', perms: ['power', 'files'] }] }, hub.token)).status, 200);
         assert.equal((await hub.api('GET', `/api/servers?node=${nodeId}`, undefined, user)).data[0].id, id);
+        // Plugins on another machine: admin only, whitelisted plugin IDs, and the Steam key stays on the hub.
+        assert.ok(remote.actions.includes('plugins'));
+        const plugins = await hub.api('GET', `/api/server/${id}/plugins`, undefined, hub.token); assert.equal(plugins.status, 200, JSON.stringify(plugins.data));
+        assert.deepEqual(plugins.data.map(p => p.id), ['metamod', 'sourcemod', 'ulib', 'ulx']); assert.equal(plugins.data[0].installed, false);
+        assert.equal((await hub.api('GET', `/api/server/${id}/plugins`, undefined, user)).status, 403);
+        assert.equal((await hub.api('POST', `/api/server/${id}/plugins/install`, { pluginId: 'ulx' }, user)).status, 403);
+        assert.equal((await hub.api('POST', `/api/server/${id}/workshop`, { collectionId: '123' }, user)).status, 403);
+        assert.equal((await hub.api('GET', `/api/server/${id}/workshop/search?q=x`, undefined, user)).status, 403);
+        assert.equal((await hub.api('GET', `/api/server/${id}/workshop/search?q=x`, undefined, hub.token)).status, 400);
+        assert.equal((await hub.api('POST', `/api/server/${id}/plugins/install`, { pluginId: '../evil' }, hub.token)).status, 500);
+        assert.equal((await hub.api('POST', `/api/server/${id}/workshop`, { collectionId: 'not-a-number' }, hub.token)).status, 400);
+        assert.equal((await hub.api('POST', `/api/server/${id}/workshop`, { collectionId: '123456' }, hub.token)).status, 200);
         const settings = await hub.api('GET', `/api/server/${id}/settings`, undefined, user); assert.equal(settings.data.vars.password, undefined);
         browser = io(`http://127.0.0.1:${hub.port}`, { auth: { token: user }, transports: ['websocket'], reconnection: false }); await once(browser, 'connect'); browser.emit('watch', id);
         const live = new Promise((resolve, reject) => { liveTimer = setTimeout(() => reject(new Error('Missing remote console stream')), 8000); browser.once(`server-log-${id}`, data => { clearTimeout(liveTimer); resolve([data]); }); });

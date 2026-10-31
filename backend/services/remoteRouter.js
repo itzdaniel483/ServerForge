@@ -7,6 +7,7 @@ const GROUPS = {
     status: ['server.status'], 'console.read': ['console.read'], power: ['power.start', 'power.stop'],
     'console.command': ['console.command'], 'files.read': ['files.read'], 'files.write': ['files.write'],
     backups: ['backups.list'], tasks: ['tasks.list'], settings: ['settings.read'], update: ['update'], delete: ['delete'],
+    plugins: ['plugins.list', 'plugins.install', 'workshop.set'],
 };
 const USER_PERM = { 'server.status': 'view', 'console.read': 'view', 'console.command': 'console', 'power.start': 'power', 'power.stop': 'power',
     'files.read': 'files', 'backups.list': 'backups', 'backups.create': 'backups', 'tasks.list': 'view', 'settings.read': 'view' };
@@ -60,6 +61,13 @@ function createRemoteRouter({ registry, getTransport, store, userStore, onAccess
                 audit(req, 'remote-access', srv, 'Permissions updated');
                 return res.json({ success: true, access: list });
             }
+            // Workshop search only talks to Steam with the hub's key, so the key never has to leave this panel.
+            if (remoteId && pathname.endsWith('/workshop/search') && req.method === 'GET') {
+                if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+                const apiKey = (await require('./settingsStore').getSettings()).steamApiKey;
+                if (!apiKey) return res.status(400).json({ error: 'Steam Web API Key not configured' });
+                return res.json(await require('./pluginService').searchWorkshop(apiKey, 4000, req.query.q, req.query.page));
+            }
             const { classifyRemoteRequest } = require('./nodeActions');
             const mapped = classifyRemoteRequest(req.method, nativePath, body, req.query);
             if (!mapped) return res.status(501).json({ error: 'This remote action is unsupported', code: 'ACTION_UNSUPPORTED' });
@@ -79,7 +87,7 @@ function createRemoteRouter({ registry, getTransport, store, userStore, onAccess
             }
             const { ip, userAgent } = auditContext(req);
             const result = await transport.request(selected, mapped.action, mapped.params, { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role, ip, userAgent },
-                { timeoutMs: ['install', 'update', 'backups.restore', 'cache.copy'].includes(mapped.action) ? 1800000 : 30000 });
+                { timeoutMs: ['install', 'update', 'backups.restore', 'cache.copy', 'plugins.install'].includes(mapped.action) ? 1800000 : 30000 });
             let response = result.body;
             if (mapped.action === 'catalog' && response && typeof response === 'object') response = { ...response, nodeId: selected };
             if (mapped.action === 'tasks.list' && Array.isArray(response?.tasks)) response = { ...response, tasks: response.tasks.map(task => ({ ...task, id: `${selected}:${task.id}`, serverId: `${selected}:${task.serverId}` })) };

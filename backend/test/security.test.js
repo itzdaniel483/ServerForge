@@ -118,6 +118,60 @@ test('normal users cannot run programs, install, write files or change auth', as
     ]) assert.equal((await api(m, u, { token: userToken, body })).status, 403, `${m} ${u}`);
 });
 
+test('admins can reset, disable, enable, and change roles without leaving stale sessions', async () => {
+    const created = await api('POST', '/api/users', { token: adminToken, body: { username: 'managed-user', password: 'managed-old-1', role: 'user' } });
+    assert.equal(created.status, 200);
+    const id = created.data.id;
+    const listed = await api('GET', '/api/users', { token: adminToken });
+    const record = listed.data.find(u => u.id === id);
+    assert.equal(record.disabled, false);
+    assert.equal(Object.hasOwn(record, 'passwordHash'), false);
+    assert.equal((await api('PATCH', `/api/users/${id}`, { token: userToken, body: { disabled: true } })).status, 403);
+
+    assert.equal((await api('PATCH', `/api/users/${id}`, { token: adminToken, body: { role: 'admin' } })).status, 200);
+    const adminLogin = await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-old-1' } });
+    assert.equal(adminLogin.status, 200);
+    assert.equal(adminLogin.data.user.role, 'admin');
+    assert.equal((await api('GET', '/api/users', { token: adminLogin.data.token })).status, 200);
+
+    assert.equal((await api('PATCH', `/api/users/${id}`, { token: adminToken, body: { role: 'user' } })).status, 200);
+    assert.equal((await api('GET', '/api/users', { token: adminLogin.data.token })).status, 401, 'role change revokes old token');
+    assert.equal((await api('PATCH', `/api/users/${id}`, { token: adminToken, body: { role: 'owner' } })).status, 400);
+    assert.equal((await api('POST', `/api/users/${id}/reset-password`, { token: adminToken, body: { newPassword: 'short' } })).status, 400);
+
+    const userLogin = await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-old-1' } });
+    assert.equal(userLogin.status, 200);
+    const reset = await api('POST', `/api/users/${id}/reset-password`, { token: adminToken, body: { newPassword: 'managed-new-2' } });
+    assert.equal(reset.status, 200);
+    assert.equal(reset.data.success, true);
+    assert.equal((await api('GET', '/api/servers', { token: userLogin.data.token })).status, 401, 'password reset revokes old token');
+    assert.equal((await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-old-1' } })).status, 401);
+    const resetLogin = await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-new-2' } });
+    assert.equal(resetLogin.status, 200);
+
+    const socket = io(base, { auth: { token: resetLogin.data.token }, transports: ['websocket'], reconnection: false, timeout: 3000 });
+    try {
+        await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
+        const disconnected = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('disabling user did not disconnect socket')), 3000);
+            socket.once('disconnect', reason => { clearTimeout(timer); resolve(reason); });
+        });
+        assert.equal((await api('PATCH', `/api/users/${id}`, { token: adminToken, body: { disabled: true } })).status, 200);
+        assert.equal(await disconnected, 'io server disconnect');
+        assert.equal((await api('GET', '/api/servers', { token: resetLogin.data.token })).status, 401);
+        assert.equal((await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-new-2' } })).status, 401);
+        assert.equal((await api('PATCH', `/api/users/${id}`, { token: adminToken, body: { disabled: false } })).status, 200);
+        assert.equal((await api('POST', '/api/login', { body: { username: 'managed-user', password: 'managed-new-2' } })).status, 200);
+    } finally {
+        socket.close();
+    }
+
+    const admins = (await api('GET', '/api/users', { token: adminToken })).data.filter(u => u.role === 'admin' && !u.disabled);
+    assert.equal(admins.length, 1);
+    assert.equal((await api('PATCH', `/api/users/${admins[0].id}`, { token: adminToken, body: { disabled: true } })).status, 400, 'last active admin cannot be disabled');
+    assert.equal((await api('DELETE', `/api/users/${admins[0].id}`, { token: adminToken })).status, 400, 'last active admin cannot be deleted');
+});
+
 test('paths stay inside the server folder; executables cannot point outside it', async () => {
     // Create a server record without SteamCMD by writing the store directly is not possible from outside,
     // so use the install route's validation and the config route's guards.
