@@ -20,9 +20,10 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
     const children = [];
     let client, runtime, hub, node;
     const PASSWORD = 'federation-test-password';
-    async function panel(name, tls = false) {
+    async function panel(name, tls = false, cacheSeed = null) {
         const dir = path.join(root, name);
         for (const sub of ['data', 'servers', 'backups', 'cache', 'steamcmd']) fs.mkdirSync(path.join(dir, sub), { recursive: true });
+        if (cacheSeed) fs.writeFileSync(path.join(dir, 'cache', 'cache.json'), JSON.stringify(cacheSeed));
         fs.writeFileSync(path.join(dir, 'steamcmd', 'steamcmd.sh'), '#!/bin/sh\ndest=""\napp=""\nwhile [ "$#" -gt 0 ]; do\n if [ "$1" = "+force_install_dir" ]; then shift; dest="$1"; fi\n if [ "$1" = "+app_update" ]; then shift; app="$1"; fi\n shift\ndone\nmkdir -p "$dest"\necho fixture > "$dest/steam-fixture.txt"\nprintf \"#!/bin/sh\\nwhile true; do echo moved-tick; sleep 0.3; done\\n\" > \"$dest/srcds_run\"\nchmod +x \"$dest/srcds_run\"\necho "progress: 50.0 (test fixture)"\necho "Success! App \x27$app\x27 fully installed."\nexit 0\n', { mode: 0o755 });
         if (!tls) {
             const game = path.join(dir, 'servers', 'fixture'); fs.mkdirSync(game);
@@ -50,8 +51,12 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         return { dir, port, token: login.data.token, api };
     }
     try {
-        hub = await panel('hub', true); node = await panel('node');
+        hub = await panel('hub', true, { '232250': { name: 'Team Fortress 2', status: 'ready' } }); node = await panel('node');
+        // Moving to a machine with a ready cache should reuse it instead of invoking SteamCMD.
+        const cachedGame = path.join(hub.dir, 'cache', '232250'); fs.mkdirSync(cachedGame, { recursive: true });
+        fs.writeFileSync(path.join(cachedGame, 'srcds_run'), '#!/bin/sh\nwhile true; do echo cached-game-tick; sleep 0.2; done\n', { mode: 0o755 });
         runtime = createNodeRuntime({ dataDir: path.join(node.dir, 'data'), localApiUrl: `http://127.0.0.1:${node.port}` });
+        runtime.capabilities = [...runtime.capabilities, 'future.action'];   // a newer node: the hub must ignore what it doesn't know, not drop the link
         client = new NodeClient({ dataDir: path.join(root, 'identity'), name: 'Fixture Linux', runtime });
         const bundle = await hub.api('POST', '/api/nodes/enrol', {}, hub.token);
         const pending = once(client, 'pending'); await client.pair(bundle.data); const [candidate] = await pending;
@@ -75,11 +80,14 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         let job;
         for (let i = 0; i < 200; i++) { job = (await hub.api('GET', `/api/moves/${start.data.moveId}`, undefined, hub.token)).data; if (['done', 'failed'].includes(job.step)) break; await pause(200); }
         assert.equal(job.step, 'done', JSON.stringify(job.log));
+        assert.ok(job.log.some(line => /destination machine's ready cache/i.test(line)), JSON.stringify(job.log));
         const moved = (await hub.api('GET', '/api/servers', undefined, hub.token)).data.find(s => s.id === job.newServerId);
         assert.ok(moved, 'new server is on the hub'); assert.equal(moved.nodeId, 'local');
         const hubServers = JSON.parse(fs.readFileSync(path.join(hub.dir, 'data', 'servers.json'), 'utf8'));
         const rec = hubServers.find(s => s.id === job.newServerId);
         assert.equal(fs.readFileSync(path.join(rec.path, 'tf', 'cfg', 'server.cfg'), 'utf8'), 'hostname "Moved across"');
+        assert.match(fs.readFileSync(path.join(rec.path, 'srcds_run'), 'utf8'), /cached-game-tick/, 'files came from the destination cache');
+        assert.equal(fs.existsSync(path.join(rec.path, 'steam-fixture.txt')), false, 'SteamCMD was not run for the cached move');
         assert.deepEqual(rec.access, [{ username: 'mover', perms: ['view', 'power', 'console'] }], 'access copied');
         const tasks = (await hub.api('GET', `/api/server/${job.newServerId}/tasks`, undefined, hub.token)).data.tasks;
         assert.deepEqual(tasks.map(t => [t.type, t.cron, t.command, t.label, t.enabled]), [['command', '0 6 * * *', 'say morning', 'Morning hello', true]], 'schedule copied');

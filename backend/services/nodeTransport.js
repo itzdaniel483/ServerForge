@@ -109,8 +109,11 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
                 markSeen(state);
                 if (msg.type === 'ping') return send(ws, { type: 'pong' });
                 if (msg.type === 'capabilities') {
-                    if (!Array.isArray(msg.actions) || msg.actions.length > ACTIONS.length || msg.actions.some(action => !allowedActions.has(action))) throw new Error('Invalid node capabilities');
-                    state.actions = new Set(msg.actions);
+                    // A node newer than this hub may offer actions the hub doesn't know yet. Ignore those instead of
+                    // dropping the link (2026-10-31: a v1.0.5 node with machine.info was refused by the older hub for
+                    // 11 hours). The hub only ever calls actions it knows, so unknown ones are harmless. Bad shapes still fail.
+                    if (!Array.isArray(msg.actions) || msg.actions.length > 512 || msg.actions.some(action => typeof action !== 'string' || action.length > 64)) throw new Error('Invalid node capabilities');
+                    state.actions = new Set(msg.actions.filter(action => allowedActions.has(action)));
                     // The node's app version (build hash), so the Nodes page can offer an update (claude).
                     if (typeof msg.version === 'string' && /^[\w.-]{1,40}$/.test(msg.version)) { state.version = msg.version; const st = statuses.get(state.nodeId); if (st) st.version = msg.version; }
                     // Updater protocol (codex review 3616): the panel only pushes updates to nodes with the safe updater (2+).
