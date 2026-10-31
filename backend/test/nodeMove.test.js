@@ -58,6 +58,11 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         await hub.api('POST', `/api/nodes/${candidate.candidateId}/approve`, { fingerprintConfirmed: true }, hub.token);
         const nodeId = candidate.candidateId, remoteId = `${nodeId}:sameid`;
         for (let i = 0; i < 80 && !(await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId); i++) await pause(100);
+        // Schedules and access come along (checklist): one task on the node server, one user grant kept by the hub.
+        assert.equal((await hub.api('POST', '/api/users', { username: 'mover', password: 'mover-password-123', role: 'user' }, hub.token)).status, 200);
+        assert.equal((await hub.api('PUT', `/api/server/${remoteId}/access`, { access: [{ username: 'mover', perms: ['power', 'console'] }] }, hub.token)).status, 200);
+        const task = await hub.api('POST', `/api/server/${remoteId}/tasks`, { type: 'command', cron: '0 6 * * *', command: 'say morning', label: 'Morning hello' }, hub.token);
+        assert.equal(task.status, 200, JSON.stringify(task.data));
         const start = await hub.api('POST', '/api/moves', { serverId: remoteId, targetNodeId: 'local' }, hub.token);
         assert.equal(start.status, 202);
         let job;
@@ -68,6 +73,11 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         const hubServers = JSON.parse(fs.readFileSync(path.join(hub.dir, 'data', 'servers.json'), 'utf8'));
         const rec = hubServers.find(s => s.id === job.newServerId);
         assert.equal(fs.readFileSync(path.join(rec.path, 'tf', 'cfg', 'server.cfg'), 'utf8'), 'hostname "Moved across"');
+        assert.deepEqual(rec.access, [{ username: 'mover', perms: ['view', 'power', 'console'] }], 'access copied');
+        const tasks = (await hub.api('GET', `/api/server/${job.newServerId}/tasks`, undefined, hub.token)).data.tasks;
+        assert.deepEqual(tasks.map(t => [t.type, t.cron, t.command, t.label, t.enabled]), [['command', '0 6 * * *', 'say morning', 'Morning hello', true]], 'schedule copied');
+        assert.ok(job.log.some(l => /Copied 1 schedule\./.test(l)) && job.log.some(l => /Copied access for 1 user\./.test(l)), JSON.stringify(job.log));
+        assert.deepEqual(job.warnings, []);
         assert.equal((await hub.api('POST', `/api/moves/${start.data.moveId}/finish`, { removeSource: true }, hub.token)).status, 200);
         for (let i = 0; i < 50 && (await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId); i++) await pause(200);
         assert.equal((await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId), false, 'original removed');

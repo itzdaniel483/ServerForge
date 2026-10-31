@@ -10,7 +10,7 @@ import { Button, Card, Meter, Notice } from '../ui';
 import { OsIcon } from '../nodes';
 import { osLabel } from '../nodeUtils';
 
-const STEPS = [['stopping', 'Stop and pack configs/saves'], ['installing', 'Fresh install on the new machine'], ['copying', 'Copy configs and saves'], ['verifying', 'Start it there and check'], ['done', 'Moved']];
+const STEPS = [['stopping', 'Stop and pack configs/saves'], ['installing', 'Fresh install on the new machine'], ['copying', 'Copy configs and saves'], ['verifying', 'Start it there, copy schedules and access'], ['done', 'Moved']];
 
 // Off until the move backend ships (item #4); the button would otherwise fail.
 const MOVE_ENABLED = true;
@@ -98,6 +98,7 @@ function MoveDialog({ server, onClose, onMoved }) {
                             {move.step !== 'done' && move.step !== 'failed' && <Meter value={move.progress || 0} label="Move progress" />}
                             {move.step === 'failed' && <Notice>{move.error || 'The move failed. The original server is untouched.'}</Notice>}
                             {(move.log || []).length > 0 && <pre className="h-28 overflow-auto rounded bg-gray-950 border border-gray-800 p-2 font-mono text-[11px] text-gray-300 whitespace-pre-wrap">{move.log.slice(-60).join('\n')}</pre>}
+                            {move.step === 'done' && move.warnings?.length > 0 && <p className="text-xs text-warn-300">Moved, but {move.warnings.join(' and ')} could not be copied. Set {move.warnings.length > 1 ? 'them' : 'it'} again on the new server.</p>}
                             {move.step === 'done' ? (
                                 <div className="space-y-2">
                                     <p className="text-[13px] text-go-200">It's running on {targetNode?.name || 'the new machine'}. Remove the old copy?</p>

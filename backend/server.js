@@ -520,7 +520,24 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         let running = false;
         for (let i = 0; i < 15 && !running; i++) { await new Promise(r => setTimeout(r, 2000)); running = (await call(targetNodeId, 'GET', `/api/server/${created}/status`)).status === 'running'; }
         if (!running) throw new Error('It installed but did not stay running on the new machine');
-        job.step = 'done'; job.progress = 100; log('Running on the new machine.');
+        log('Running on the new machine.');
+        // Schedules and who-can-use-it come along too (checklist). The server is already running, so a problem
+        // here is reported in the log (and job.warnings), not treated as a failed move.
+        job.warnings = [];
+        try {
+            const { tasks = [] } = (await call(src.node, 'GET', `/api/server/${src.id}/tasks`)) || {};
+            for (const t of tasks) await call(targetNodeId, 'POST', `/api/server/${created}/tasks`, { type: t.type, cron: t.cron, command: t.command || '', label: t.label || '', enabled: t.enabled !== false });
+            if (tasks.length) log(`Copied ${tasks.length} schedule${tasks.length === 1 ? '' : 's'}.`);
+        } catch (err) { job.warnings.push('schedules'); log(`Schedules were not copied (${err.message}); add them again on the new server.`); }
+        try {
+            // Access is kept by this panel for every machine: per server for local ones, per node server for remote ones.
+            const grants = src.node === 'local' ? serverStore.get(src.id)?.access : remoteServers.get(serverId, nodeRegistry, nodeTransport)?.access;
+            if (Array.isArray(grants) && grants.length) {
+                if (targetNodeId === 'local') await serverStore.update(created, { access: grants }); else remoteServers.setAccess(job.newServerId, grants);
+                log(`Copied access for ${grants.length} user${grants.length === 1 ? '' : 's'}.`);
+            }
+        } catch (err) { job.warnings.push('access'); log(`Access was not copied (${err.message}); set it again on the new server.`); }
+        job.step = 'done'; job.progress = 100;
     } catch (err) {
         job.failedAt = job.step; job.step = 'failed'; job.error = err.code === 'OUTCOME_UNKNOWN' || /outcome is unknown/i.test(err.message) ? `${err.message}. The other machine may still be finishing that step: check its server list before trying again.` : err.message; log(`Failed: ${job.error}`);
         if (created) { try { await call(targetNodeId, 'DELETE', `/api/server/${created}`); log('Removed the half-made copy on the new machine.'); } catch { /* best effort */ } }
