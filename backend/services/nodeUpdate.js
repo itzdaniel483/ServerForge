@@ -28,6 +28,15 @@ function signingKey() {
     return key;
 }
 const manifestText = m => `${m.version}\n${m.sha256}\n${m.size}`;
+// Same rule as the updater's (installers/windows-node/service/apply-update.js): only a strictly newer release.
+const RELEASE = /^\d{1,6}(\.\d{1,6}){1,3}$/;
+function isNewer(candidate, current) {
+    if (!RELEASE.test(candidate || '')) return false;
+    if (!RELEASE.test(current || '')) return true;
+    const a = candidate.split('.').map(Number), b = current.split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d > 0; }
+    return false;
+}
 function packageInfo(file = PACKAGE) {
     if (!fs.existsSync(file)) return null;
     const version = fs.readFileSync(file.replace(/\.zip$/, '.version'), 'utf8').trim();
@@ -67,13 +76,20 @@ function stage({ manifest, signature }) {
     // The updater re-verifies everything (hash + signature) as SYSTEM; this is only an early, friendly check.
     fs.renameSync(file, path.join(UPDATE_DIR, 'package.zip'));
     fs.writeFileSync(path.join(UPDATE_DIR, 'ready.json'), JSON.stringify({ manifest: { version: manifest.version, sha256: sha, size: manifest.size }, signature }));
-    try { fs.rmSync(path.join(UPDATE_DIR, 'result.json'), { force: true }); } catch { /* none */ }
     return { staged: true };
 }
+// On a Windows node this file is <install>\app\backend\services; the updater lives in <install>\service and (from
+// protocol 2) writes its result to <install>\update-result.json, where the game account can't forge it.
+const INSTALL_DIR = process.env.NODE_INSTALL_DIR || path.join(__dirname, '..', '..', '..');
+const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 function status() {
-    const read = f => { try { return JSON.parse(fs.readFileSync(path.join(UPDATE_DIR, f), 'utf8')); } catch { return null; } };
-    return { version: currentVersion(), pending: !!read('ready.json'), result: read('result.json') };
+    return { version: currentVersion(), updater: updaterProtocol(), pending: fs.existsSync(path.join(UPDATE_DIR, 'ready.json')), result: readJson(path.join(INSTALL_DIR, 'update-result.json')) };
+}
+// 0 = no updater, 1 = the first one (verify-then-reopen; the panel won't push to it), 2+ = safe staging.
+function updaterProtocol() {
+    try { const m = /UPDATER_PROTOCOL\s*=\s*(\d+)/.exec(fs.readFileSync(path.join(INSTALL_DIR, 'service', 'apply-update.js'), 'utf8')); return m ? Number(m[1]) : 1; }
+    catch { return 0; }
 }
 function currentVersion() { try { return fs.readFileSync(path.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim() || 'dev'; } catch { return 'dev'; } }
 
-module.exports = { signingKey, packageInfo, manifestText, receiveChunk, stage, status, currentVersion, CHUNK, PUB_FILE, UPDATE_DIR };
+module.exports = { signingKey, packageInfo, manifestText, isNewer, receiveChunk, stage, status, currentVersion, updaterProtocol, CHUNK, PUB_FILE, UPDATE_DIR };

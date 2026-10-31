@@ -106,7 +106,8 @@ function UpdateCell({ node, latest, onUpdated }) {
     return (
         <span className="inline-flex items-center gap-2">
             {job?.step === 'failed' && <span className="text-xs text-stop-300" title={job.error}>Update failed</span>}
-            {behind && node.online && <Button size="sm" variant="primary" onClick={start} title={`Update to ${vLabel(latest)}`}>Update to {vLabel(latest)}</Button>}
+            {behind && node.online && node.updater >= 2 && <Button size="sm" variant="primary" onClick={start} title={`Update to ${vLabel(latest)}`}>Update to {vLabel(latest)}</Button>}
+            {behind && node.online && !(node.updater >= 2) && <span className="text-xs text-warn-300" title="Updates are paused for this machine until it has the safer updater (one-time Setup run)">Run the latest Setup once to keep updating</span>}
             {latest && !node.version && node.online && <span className="text-xs text-gray-400" title="This machine was set up before one-click updates existed">Run Setup once to enable updates</span>}
         </span>
     );

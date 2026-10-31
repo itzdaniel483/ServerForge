@@ -376,6 +376,10 @@ app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
     let info;
     try { info = nodeUpdate.packageInfo(); } catch (err) { return res.status(500).json({ error: err.message }); }
     if (!info) return res.status(503).json({ error: 'No update package has been built on this panel yet' });
+    const st0 = nodeTransport.listStatus()[id];
+    // The first updater re-read the package after checking it (codex review 3616); only push to the safe one.
+    if (!(st0.updater >= 2)) return res.status(409).json({ error: 'This machine has the old updater. Run the latest Setup on it once, then updates work from here.', code: 'NODE_UPDATER_OLD' });
+    if (!nodeUpdate.isNewer(info.manifest.version, st0.version)) return res.status(409).json({ error: `This machine is already on ${st0.version} (the package is ${info.manifest.version})`, code: 'NODE_UP_TO_DATE' });
     const job = { step: 'sending', sent: 0, total: info.manifest.size, version: info.manifest.version, error: null, at: Date.now() };
     updateJobs.set(id, job);
     audit(req, 'node-update', null, `${id} → ${info.manifest.version}`);
@@ -387,6 +391,8 @@ app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
             if (r.status < 200 || r.status >= 300) throw new Error(r.body?.error || `${action} failed (${r.status})`);
             return r.body;
         };
+        // The updater's last result stays on disk; only a result written after this one counts.
+        let before = null; try { before = (await call('update.status', {}))?.result?.at ?? null; } catch { /* none yet */ }
         for (let offset = 0; offset < info.data.length; offset += nodeUpdate.CHUNK) {
             const part = info.data.subarray(offset, offset + nodeUpdate.CHUNK);
             await call('update.chunk', { offset, data: part.toString('base64'), total: info.data.length, sha256: info.manifest.sha256 });
@@ -399,10 +405,12 @@ app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
         while (Date.now() < deadline) {
             await new Promise(r => setTimeout(r, 3000));
             const st = nodeTransport.listStatus()[id];
-            if (st?.online && st.version === info.manifest.version) { job.step = 'done'; return; }
-            if (st?.online) {
-                try { const s = await call('update.status', {}); if (s?.result?.status === 'failed') { job.step = 'failed'; job.error = s.result.error || 'The update failed on the machine; it kept its old version.'; return; } } catch { /* restarting */ }
-            }
+            if (!st?.online) continue;
+            // Done only when the updater itself confirms this version AND the machine is back running it.
+            let s = null; try { s = await call('update.status', {}); } catch { continue; /* restarting */ }
+            if (!s?.result || s.result.at === before) continue;
+            if (s.result.status === 'failed') { job.step = 'failed'; job.error = s.result.error || 'The update failed on the machine; it kept its old version.'; return; }
+            if (s.result.status === 'done' && s.result.version === info.manifest.version && s.version === info.manifest.version && st.version === info.manifest.version) { job.step = 'done'; return; }
         }
         job.step = 'failed'; job.error = 'The machine did not come back with the new version within 10 minutes. Check it is running the latest Setup (with the updater).';
     } catch (err) { job.step = 'failed'; job.error = err.message; }

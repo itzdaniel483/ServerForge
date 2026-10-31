@@ -70,6 +70,8 @@ echo "$WINSW_SHA256  $CACHE/WinSW.NET461.exe" | sha256sum -c --quiet - || { echo
 cp "$CACHE/WinSW.NET461.exe" "$PKG/service/WinSW.exe"
 cp "$ROOT/installers/windows-node/"{Setup.cmd,Uninstall.cmd,setup.ps1,README.txt} "$PKG/"
 
+# The updater travels inside app/ too, so an update can replace it (it lives in service/, which updates don't touch).
+mkdir -p "$PKG/app/updater" && cp "$ROOT/installers/windows-node/service/apply-update.js" "$PKG/app/updater/apply-update.js"
 # Optional release note shipped with the app (also changes the version): RELEASE_NOTE="..." scripts/build-windows-node.sh
 if [ -n "${RELEASE_NOTE:-}" ]; then printf '%s\n%s\n' "$(date -u +%FT%TZ)" "$RELEASE_NOTE" > "$PKG/app/RELEASE.txt"; fi
 

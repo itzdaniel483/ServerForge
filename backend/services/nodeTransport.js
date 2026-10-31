@@ -113,6 +113,8 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
                     state.actions = new Set(msg.actions);
                     // The node's app version (build hash), so the Nodes page can offer an update (claude).
                     if (typeof msg.version === 'string' && /^[\w.-]{1,40}$/.test(msg.version)) { state.version = msg.version; const st = statuses.get(state.nodeId); if (st) st.version = msg.version; }
+                    // Updater protocol (codex review 3616): the panel only pushes updates to nodes with the safe updater (2+).
+                    state.updater = Number.isInteger(msg.updater) && msg.updater >= 0 && msg.updater < 100 ? msg.updater : 0;
                     events.emit('capabilities', { nodeId: state.nodeId, actions: [...state.actions] });
                     return;
                 }
@@ -272,7 +274,7 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
         listStatus() {
             const result = {};
             for (const node of registry.list()) result[node.id] = { online: false, lastSeen: null };
-            for (const [id, status] of statuses) result[id] = { ...status, version: links.get(id)?.version ?? status.version ?? null, actions: [...(links.get(id)?.actions || [])], ...(links.has(id) ? { nodeHost: links.get(id).ip } : {}) };
+            for (const [id, status] of statuses) result[id] = { ...status, version: links.get(id)?.version ?? status.version ?? null, updater: links.get(id)?.updater ?? 0, actions: [...(links.get(id)?.actions || [])], ...(links.has(id) ? { nodeHost: links.get(id).ip } : {}) };
             return result;
         },
     };
