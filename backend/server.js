@@ -541,8 +541,12 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
             vars.port = p;
         }
         job.step = 'installing'; job.progress = 10;
-        log(`Installing ${game.name} on the new machine (this downloads the game; it can take a while)…`);
-        const installed = await call(targetNodeId, 'POST', '/api/install', { gameId: game.id, vars, ...(mode ? { mode: mode.id } : {}) }, { timeoutMs: 1800000 });
+        const targetCache = await call(targetNodeId, 'GET', `/api/cache/status/${game.appId}`);
+        const useCache = targetCache?.status === 'ready';
+        log(useCache
+            ? `Installing ${game.name} from the destination machine's ready cache…`
+            : `Installing ${game.name} on the new machine (downloading the game; this can take a while)…`);
+        const installed = await call(targetNodeId, 'POST', '/api/install', { gameId: game.id, vars, useCache, ...(mode ? { mode: mode.id } : {}) }, { timeoutMs: 1800000 });
         created = installed?.server?.id ? splitId(installed.server.id).id : null;
         if (!created) throw new Error('The install did not report a new server');
         job.newServerId = targetNodeId === 'local' ? created : `${targetNodeId}:${created}`;
@@ -837,7 +841,10 @@ app.post('/api/server/stop', async (req, res) => {
 // Activity log: admins see everything; users only their servers (filtered client-side by server id).
 app.get('/api/activity', requireAdmin, (req, res) => {
     const serverId = typeof req.query.server === 'string' ? req.query.server : undefined;
-    res.json(auditLog.list({ serverId, limit: Math.min(Number(req.query.limit) || 200, 1000) }));
+    // Older entries include remote page views; leave them out so the log shows changes only.
+    const { READ_ACTIONS } = require('./services/nodeTransport');
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    res.json(auditLog.list({ serverId, limit: 5000 }).filter(e => !(e.action?.startsWith('remote-') && READ_ACTIONS.has(e.action.slice(7)))).slice(0, limit));
 });
 
 app.post('/api/server/:id/update', requireAdmin, async (req, res) => {

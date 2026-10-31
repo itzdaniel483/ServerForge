@@ -282,4 +282,4 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
     };
 }
 
-module.exports = { createNodeTransport };
+module.exports = { createNodeTransport, READ_ACTIONS: readActions };

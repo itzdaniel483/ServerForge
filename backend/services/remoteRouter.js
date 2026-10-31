@@ -1,4 +1,5 @@
 const access = require('./access');
+const { READ_ACTIONS } = require('./nodeTransport');
 const { auditContext } = require('./auditContext');
 const { splitRemoteId } = require('./remoteServers');
 const nullHost = () => ({ cpuPercent: null, memory: { used: null, total: null }, disk: { used: null, total: null } });
@@ -91,7 +92,8 @@ function createRemoteRouter({ registry, getTransport, store, userStore, onAccess
             if (req.user.role !== 'admin' && mapped.action === 'settings.read' && response && typeof response === 'object') {
                 response = { ...response, vars: Object.fromEntries(Object.entries(response.vars || {}).filter(([key]) => !/password|secret|token|key/i.test(key))) };
             }
-            audit(req, `remote-${mapped.action}`, srv || { id: null, name: node.name }, `${node.id}:${result.status}`);
+            // Only changes go in the activity log; page views (status, console, settings reads…) were 80% of it (Daniel 3730).
+            if (!READ_ACTIONS.has(mapped.action)) audit(req, `remote-${mapped.action}`, srv || { id: null, name: node.name }, `${node.id}:${result.status}`);
             return res.status(result.status).json(response);
         } catch (err) { return res.status(err.status || 500).json({ error: err.message, code: err.code || 'REMOTE_ERROR' }); }
     };
