@@ -29,7 +29,7 @@ const definitions = {
     'move.export': ['POST', '/api/server/:serverId/export'], 'move.read': ['GET', '/api/move-archive/:token', [], ['offset']], 'move.cleanup': ['DELETE', '/api/move-archive/:token'],
     'move.importChunk': ['POST', '/api/server/:serverId/import-chunk', ['token', 'offset', 'data', 'total']], 'move.import': ['POST', '/api/server/:serverId/import', ['token']],
     'config.write': ['PUT', '/api/server/:serverId/config', ['executable', 'args']], 'schedule.write': ['POST', '/api/server/:serverId/schedule', ['schedule']],
-    update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId'],
+    update: ['POST', '/api/server/:serverId/update'], delete: ['DELETE', '/api/server/:serverId', ['removeFiles']],
     install: ['POST', '/api/install', ['gameId', 'appId', 'vars', 'useCache', 'hostname', 'port', 'mode', 'workshopCollection', 'gamemode']],
     'cache.list': ['GET', '/api/cache/list'], 'cache.status': ['GET', '/api/cache/status/:appId'], 'cache.download': ['POST', '/api/cache/download/:appId', ['gameName']],
     'cache.cancel': ['POST', '/api/cache/:appId/cancel'], 'cache.delete': ['DELETE', '/api/cache/:appId'], 'cache.copy': ['POST', '/api/cache/copy/:appId', ['targetPath']],

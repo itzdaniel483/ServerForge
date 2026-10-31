@@ -164,7 +164,9 @@ async function createNodeTransport({ registry, host = '127.0.0.1', port = 0, key
                 if (binary) return ws.close(1003, 'JSON text required');
                 if (Date.now() - state.messageWindow >= 10_000) { state.messageWindow = Date.now(); state.messages = 0; state.bytes = 0; }
                 state.bytes += bytes.length;
-                if (++state.messages > (state.stage === 'approved' ? 4096 : 20) || state.bytes > (state.stage === 'approved' ? 32 * 1024 * 1024 : 1024 * 1024)) return ws.close(1008, 'Message limit');
+                // Flood guard per 10 s. Approved nodes get 128 MB: a move's archive copy (paced at ~96 MB/10 s) blew the old
+                // 32 MB and dropped the link mid-copy ("Node is offline", Daniel #gamemanager 3731).
+                if (++state.messages > (state.stage === 'approved' ? 4096 : 20) || state.bytes > (state.stage === 'approved' ? 128 * 1024 * 1024 : 1024 * 1024)) return ws.close(1008, 'Message limit');
                 state.queue = state.queue.then(async () => {
                     if (ws.readyState !== WebSocket.OPEN) return;
                     let msg;

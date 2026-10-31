@@ -82,6 +82,11 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         for (let i = 0; i < 50 && (await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId); i++) await pause(200);
         assert.equal((await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId), false, 'original removed');
         await hub.api('POST', '/api/server/stop', { id: job.newServerId }, hub.token);
+        // A failed move's cleanup deletes with removeFiles (Daniel 3731: leftover installs). Folder goes; only when stopped.
+        for (let i = 0; i < 30 && (await hub.api('GET', `/api/server/${job.newServerId}/status`, undefined, hub.token)).data.status === 'running'; i++) await pause(200);
+        const del = await hub.api('DELETE', `/api/server/${job.newServerId}`, { removeFiles: true }, hub.token);
+        assert.equal(del.status, 200); assert.equal(del.data.filesRemoved, true, JSON.stringify(del.data));
+        assert.equal(fs.existsSync(rec.path), false, 'game files removed with the record');
     } finally {
         client?.stop(); runtime?.close?.();
         for (const c of children) c.kill('SIGKILL');

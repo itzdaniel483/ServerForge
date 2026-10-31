@@ -240,6 +240,31 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
+app.patch('/api/users/:id', requireAdmin, async (req, res) => {
+    try {
+        const user = await userStore.updateUser(req.params.id, req.body);
+        const changed = [];
+        if ('role' in req.body) changed.push(`role=${user.role}`);
+        if ('disabled' in req.body) changed.push(`disabled=${user.disabled}`);
+        audit(req, 'user-updated', null, `${user.username} ${changed.join(' ')}`.trim());
+        res.json(user);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.post('/api/users/:id/reset-password', requireAdmin, async (req, res) => {
+    try {
+        const { newPassword } = req.body || {};
+        await userStore.resetPassword(req.params.id, newPassword);
+        const user = (await userStore.getUsers()).find(u => u.id === req.params.id);
+        audit(req, 'user-password-reset', null, user?.username || req.params.id);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
 app.delete('/api/users/:id', async (req, res) => {
     try {
         if (req.user.role !== 'admin') {
@@ -505,8 +530,13 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         job.newServerId = targetNodeId === 'local' ? created : `${targetNodeId}:${created}`;
         job.step = 'copying'; job.progress = 70;
         log('Copying configs and saves…');
+        // Pace big copies (Daniel's Gmod with addons tripped the node link's flood guard mid-copy): ≤ ~96 MB per 10 s.
+        const window = { start: Date.now(), bytes: 0 };
         for (let offset = 0; offset < archive.size || offset === 0; ) {
+            if (Date.now() - window.start >= 10_000) { window.start = Date.now(); window.bytes = 0; }
+            if (window.bytes >= 96 * 1024 * 1024) { await new Promise(r => setTimeout(r, 10_000 - (Date.now() - window.start))); window.start = Date.now(); window.bytes = 0; }
             const part = await call(src.node, 'GET', `/api/move-archive/${archive.token}`, null, { query: { offset } });
+            window.bytes += part.data ? part.data.length : 0;
             await call(targetNodeId, 'POST', `/api/server/${created}/import-chunk`, { token: archive.token, offset, data: part.data, total: archive.size || 1 });
             offset += Buffer.from(part.data, 'base64').length;
             job.progress = 70 + Math.round((offset / Math.max(archive.size, 1)) * 15);
@@ -540,7 +570,8 @@ app.post('/api/moves', requireAdmin, async (req, res) => {
         job.step = 'done'; job.progress = 100;
     } catch (err) {
         job.failedAt = job.step; job.step = 'failed'; job.error = err.code === 'OUTCOME_UNKNOWN' || /outcome is unknown/i.test(err.message) ? `${err.message}. The other machine may still be finishing that step: check its server list before trying again.` : err.message; log(`Failed: ${job.error}`);
-        if (created) { try { await call(targetNodeId, 'DELETE', `/api/server/${created}`); log('Removed the half-made copy on the new machine.'); } catch { /* best effort */ } }
+        console.error(`Move ${moveId} (${serverId} → ${targetNodeId}) failed at ${job.failedAt}: ${job.error}`);
+        if (created) { try { const r = await call(targetNodeId, 'DELETE', `/api/server/${created}`, { removeFiles: true }); log(r?.filesRemoved ? 'Removed the half-made copy (and its files) on the new machine.' : 'Removed the half-made copy on the new machine.'); } catch { /* best effort */ } }
         if (job.wasRunning) { try { await call(src.node, 'POST', '/api/server/start', { id: src.id }); log('Restarted the original.'); } catch { /* best effort */ } }
     } finally {
         if (archive?.token) { for (const side of [src.node, targetNodeId]) { try { await call(side, 'DELETE', `/api/move-archive/${archive.token}`); } catch { /* temp file */ } } }
@@ -835,11 +866,19 @@ app.delete('/api/server/:id', requireAdmin, async (req, res) => {
     if (!serverStore.get(id)) return res.status(404).json({ error: 'Server not found' });
 
     try {
-        audit(req, 'delete', serverStore.get(id));
+        const srv = serverStore.get(id);
+        audit(req, 'delete', srv);
+        const running = processManager.getStatus(id) === 'running';
         processManager.stop(id);
         await serverStore.remove(id);
         schedulerService.removeForServer(id);
-        res.json({ success: true });
+        // removeFiles (claude, Daniel #gamemanager 3731): a failed move's half-made copy also takes its game files with
+        // it, so retries don't leave full installs on disk. Only inside SERVERS_ROOT, never the root, never if running.
+        let filesRemoved = false;
+        if (req.body?.removeFiles === true && !running && srv.path && isInside(SERVERS_ROOT, srv.path) && path.resolve(srv.path) !== path.resolve(SERVERS_ROOT)) {
+            await fs.remove(srv.path); filesRemoved = true;
+        }
+        res.json({ success: true, filesRemoved });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
