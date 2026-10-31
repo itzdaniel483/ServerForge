@@ -9,7 +9,7 @@ import { errorText } from '../api';
 import { Button, Panel, Notice } from '../ui';
 import CommandEditor from './CommandEditor';
 
-const box = 'w-full bg-gray-950 text-gray-100 font-mono text-[13px] leading-relaxed px-3 py-2 rounded border border-gray-700 focus:border-accent-500 focus:outline-none resize-y';
+const box = 'w-full bg-gray-950 text-gray-100 font-mono text-sm leading-relaxed px-3 py-2 rounded border border-gray-700 focus:border-accent-500 focus:outline-none resize-y';
 
 export default function LaunchEditor({ server }) {
     const [data, setData] = useState(null);          // GET /launch result
@@ -64,7 +64,7 @@ export default function LaunchEditor({ server }) {
 
     if (missing) return <CommandEditor serverId={server.id} serverData={server} />;
     if (outdated) return <Notice>This machine needs a ServerForge update before its command line can be edited here. Update it from the Nodes page (or re-run Setup on it).</Notice>;
-    if (!data) return <div className="text-[13px] text-gray-400">{msg?.text || 'Loading command line…'}</div>;
+    if (!data) return <div className="text-sm text-gray-400">{msg?.text || 'Loading command line…'}</div>;
 
     const isDefault = (data.template ?? null) === null && template === (data.defaultTemplate ?? '');
     const quote = a => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
@@ -79,13 +79,13 @@ export default function LaunchEditor({ server }) {
                 <div>
                     <div className="flex items-center justify-between gap-3 mb-1">
                         <label htmlFor="launch-template" className="text-xs font-medium text-gray-300">Template</label>
-                        <span className="text-[11px] text-gray-500">Values in {'{braces}'} come from Settings</span>
+                        <span className="text-[12px] text-gray-500">Values in {'{braces}'} come from Settings</span>
                     </div>
                     <textarea id="launch-template" ref={area} rows={3} spellCheck={false} value={template} onChange={e => setTemplate(e.target.value)} className={box} />
                     <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Insert a variable">
                         {Object.entries(data.variables || {}).map(([k, v]) => (
                             <button key={k} type="button" onClick={() => insertVar(k)} title={`Current value: ${v}`}
-                                className="h-6 px-2 rounded-sm border border-gray-700 bg-gray-900 font-mono text-[11px] text-accent-300 hover:border-accent-500">{`{${k}}`}</button>
+                                className="h-6 px-2 rounded-sm border border-gray-700 bg-gray-900 font-mono text-[12px] text-accent-300 hover:border-accent-500">{`{${k}}`}</button>
                         ))}
                     </div>
                 </div>
@@ -95,7 +95,7 @@ export default function LaunchEditor({ server }) {
                 </div>
                 <div>
                     <div className="flex items-center gap-1.5 text-xs font-medium text-gray-300 mb-1"><Terminal size={13} />Will run</div>
-                    <pre className={`rounded border px-3 py-2 font-mono text-[12px] whitespace-pre-wrap break-all ${preview.error ? 'border-stop-500/60 bg-stop-500/5 text-stop-200' : 'border-gray-800 bg-gray-950 text-go-200'}`} aria-live="polite">
+                    <pre className={`rounded border px-3 py-2 font-mono text-[13px] whitespace-pre-wrap break-all ${preview.error ? 'border-stop-500/60 bg-stop-500/5 text-stop-200' : 'border-gray-800 bg-gray-950 text-go-200'}`} aria-live="polite">
                         {preview.error ? preview.error : [data.executable, ...preview.args].filter(Boolean).map(quote).join(' ')}
                     </pre>
                 </div>

@@ -103,7 +103,7 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
                         </div>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-[13px]">
+                        <table className="w-full text-sm">
                             <thead>
                                 <tr>
                                     <th className="th w-28">Status</th>
@@ -119,7 +119,7 @@ function ServerList({ onOpen, onInstall, isAdmin }) {
                                 {shown.map(s => <ServerRow key={s.id} s={s} multi={multi} isAdmin={isAdmin} busy={busy[s.id]} act={act} onOpen={onOpen} />)}
                             </tbody>
                         </table>
-                        {shown.length === 0 && <div className="px-3 py-6 text-[13px] text-gray-400">No servers match.</div>}
+                        {shown.length === 0 && <div className="px-3 py-6 text-sm text-gray-400">No servers match.</div>}
                     </div>
                 </Card>
             )}

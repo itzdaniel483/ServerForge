@@ -20,7 +20,7 @@ export function NodeBadge({ s, className = '' }) {
     const name = isRemote(s) ? (s.nodeName || 'Other machine') : 'This panel';
     return (
         <span title={`${name} · ${osLabel(s.nodeOs)}${offline ? ' · offline' : ''}`}
-            className={`inline-flex items-center gap-1.5 h-5 px-1.5 rounded-sm border text-[11px] font-medium max-w-[11rem] ${offline ? 'border-warn-500/40 text-warn-300' : 'border-gray-700 text-gray-300 bg-gray-950/60'} ${className}`}>
+            className={`inline-flex items-center gap-1.5 h-5 px-1.5 rounded-sm border text-[12px] font-medium max-w-[11rem] ${offline ? 'border-warn-500/40 text-warn-300' : 'border-gray-700 text-gray-300 bg-gray-950/60'} ${className}`}>
             <OsIcon os={s.nodeOs} size={11} className="shrink-0" />
             <span className="truncate">{name}</span>
         </span>

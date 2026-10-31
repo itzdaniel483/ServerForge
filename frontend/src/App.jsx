@@ -107,7 +107,7 @@ function App() {
                         const on = tab === n.id;
                         return (
                             <button key={n.id} onClick={() => go(n.id)} aria-current={on ? 'page' : undefined}
-                                className={`relative w-full h-8 flex items-center gap-2.5 px-2.5 rounded text-[13px] font-medium transition-colors ${on ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/60'}`}>
+                                className={`relative w-full h-8 flex items-center gap-2.5 px-2.5 rounded text-sm font-medium transition-colors ${on ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/60'}`}>
                                 {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent-500" />}
                                 <n.icon size={16} className={on ? 'text-accent-400' : ''} />{n.label}
                             </button>
@@ -116,10 +116,10 @@ function App() {
                 </nav>
                 <HostLoad />
                 <div className="border-t border-gray-800 p-2 flex items-center gap-2">
-                    <span className="w-7 h-7 rounded bg-gray-800 border border-gray-700 grid place-items-center text-[11px] font-semibold uppercase text-gray-200 shrink-0">{user.username.slice(0, 2)}</span>
+                    <span className="w-7 h-7 rounded bg-gray-800 border border-gray-700 grid place-items-center text-[12px] font-semibold uppercase text-gray-200 shrink-0">{user.username.slice(0, 2)}</span>
                     <div className="min-w-0 flex-1 leading-tight">
-                        <div className="text-[13px] font-medium text-white truncate">{user.username}</div>
-                        <div className="text-[11px] text-gray-500 capitalize">{user.role}</div>
+                        <div className="text-sm font-medium text-white truncate">{user.username}</div>
+                        <div className="text-[12px] text-gray-500 capitalize">{user.role}</div>
                     </div>
                     <ThemePicker />
                     {!user.cloudflare && (
@@ -135,7 +135,7 @@ function App() {
                 <button onClick={() => setMenu(true)} className="lg:hidden h-8 w-8 -ml-1 rounded grid place-items-center text-gray-300 hover:bg-gray-800" aria-label="Open menu">
                     <Menu size={18} />
                 </button>
-                <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13px] min-w-0">
+                <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm min-w-0">
                     {server ? (
                         <>
                             <button onClick={() => setServer(null)} className="text-gray-400 hover:text-white">Servers</button>
@@ -178,7 +178,7 @@ function HostLoad() {
     ].filter(r => r.v !== null && r.v !== undefined);
     return (
         <div className="px-4 py-3 border-t border-gray-800 space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">This host</div>
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-500">This host</div>
             {rows.map(r => (
                 <div key={r.label}>
                     <div className="flex items-center justify-between text-xs">
@@ -216,7 +216,7 @@ function ThemePicker() {
                     {THEMES.map(t => (
                         <button key={t.id} role="menuitemradio" aria-checked={current === t.id}
                             onClick={() => { applyTheme(t.id, true); setCurrent(t.id); setOpen(false); }}
-                            className={`w-full flex items-center gap-2.5 px-2 h-8 rounded text-[13px] ${current === t.id ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-800/60'}`}>
+                            className={`w-full flex items-center gap-2.5 px-2 h-8 rounded text-sm ${current === t.id ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-800/60'}`}>
                             <span className="w-4 h-4 rounded-sm" style={{ background: t.swatch[0] }} />
                             {t.label}
                             {current === t.id && <Check size={14} className="ml-auto text-accent-400" />}

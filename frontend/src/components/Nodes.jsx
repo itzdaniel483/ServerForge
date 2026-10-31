@@ -70,7 +70,7 @@ export default function Nodes() {
 
             <Card>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-[13px]">
+                    <table className="w-full text-sm">
                         <thead><tr><th className="th w-28">Status</th><th className="th">Machine</th><th className="th hidden md:table-cell w-36">CPU</th><th className="th hidden md:table-cell w-36">RAM</th><th className="th hidden lg:table-cell w-36">Disk</th><th className="th hidden sm:table-cell">Connection</th><th className="th hidden md:table-cell">Version</th><th className="th text-right">Actions</th></tr></thead>
                         <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} latest={updateInfo?.version} onUpdated={load} />)}</tbody>
                     </table>
@@ -128,7 +128,7 @@ function NodeRow({ node, onRemove, latest, onUpdated }) {
                 <div className="flex items-center gap-2.5">
                     <span className="text-gray-400"><OsIcon os={node.os} size={15} /></span>
                     <span className="min-w-0">
-                        <span className="flex items-center gap-2"><span className="font-medium text-white truncate">{node.name}</span>{local && <span className="h-4 px-1 inline-flex items-center rounded-sm border border-accent-500/50 text-[10px] font-medium text-accent-300">This panel</span>}</span>
+                        <span className="flex items-center gap-2"><span className="font-medium text-white truncate">{node.name}</span>{local && <span className="h-4 px-1 inline-flex items-center rounded-sm border border-accent-500/50 text-[12px] font-medium text-accent-300">This panel</span>}</span>
                         <span className="block text-xs text-gray-500">{osName(node.os)}{node.version ? ` · v${node.version}` : ''}</span>
                     </span>
                 </div>

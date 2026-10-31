@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { Save, Plus, X } from 'lucide-react';
+import { Save, Plus, RefreshCw, X } from 'lucide-react';
 import { errorText } from '../api';
 import { Button, Card, Notice, inputClass } from '../ui';
 
@@ -19,10 +19,38 @@ export default function AccessManager({ server }) {
     const [pick, setPick] = useState('');
     const [msg, setMsg] = useState(null);
     const [busy, setBusy] = useState(false);
+    const [usersBusy, setUsersBusy] = useState(false);
+    const usersRequest = useRef(0);
+
+    const refreshUsers = useCallback(async () => {
+        const request = ++usersRequest.current;
+        setUsersBusy(true);
+        try {
+            const { data } = await axios.get('/api/users');
+            if (request !== usersRequest.current) return;
+            const available = data.filter(u => u.role !== 'admin');
+            setUsers(available);
+            setPick(current => current && available.some(u => u.username === current) ? current : '');
+        } catch (err) {
+            if (request === usersRequest.current) setMsg({ ok: false, text: errorText(err) });
+        } finally {
+            if (request === usersRequest.current) setUsersBusy(false);
+        }
+    }, []);
 
     useEffect(() => {
-        axios.get('/api/users').then(r => setUsers(r.data.filter(u => u.role !== 'admin'))).catch(err => setMsg({ ok: false, text: errorText(err) }));
-    }, []);
+        refreshUsers();
+        const onFocus = () => refreshUsers();
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') refreshUsers();
+        };
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [refreshUsers, server.id]);
 
     const toggle = (username, perm) => setList(l => l.map(a => a.username !== username ? a : { ...a, perms: a.perms.includes(perm) ? a.perms.filter(p => p !== perm) : [...a.perms, perm] }));
     const addUser = () => { if (pick && !list.some(a => a.username === pick)) setList([...list, { username: pick, perms: ['view', 'power', 'console'] }]); setPick(''); };
@@ -41,9 +69,14 @@ export default function AccessManager({ server }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 className="text-xl font-bold text-white">Who can use this server</h2>
-                    <div className="text-sm text-gray-400">Owner <span className="font-semibold text-gray-200">{server.owner || 'admin'}</span> and admins can do everything.</div>
+                    <div className="text-sm text-gray-400">Owner <span className="font-semibold text-gray-200">{server.owner || 'admin'}</span> and admins can do everything. Admin accounts are not assignable here.</div>
                 </div>
-                <Button variant="primary" onClick={save} disabled={busy}><Save size={17} />Save</Button>
+                <div className="flex gap-2">
+                    <Button variant="ghost" onClick={refreshUsers} disabled={usersBusy} title="Reload users available for server access">
+                        <RefreshCw size={16} className={usersBusy ? 'animate-spin' : ''} />{usersBusy ? 'Refreshing…' : 'Refresh users'}
+                    </Button>
+                    <Button variant="primary" onClick={save} disabled={busy}><Save size={17} />Save</Button>
+                </div>
             </div>
             {msg && <Notice tone={msg.ok ? 'ok' : 'error'}>{msg.text}</Notice>}
             {list.length === 0 && <div className="text-gray-300">No other users yet.</div>}
@@ -59,7 +92,7 @@ export default function AccessManager({ server }) {
             ))}
             <div className="flex gap-2">
                 <select className={`${inputClass} max-w-xs`} value={pick} onChange={e => setPick(e.target.value)}>
-                    <option value="">{free.length ? 'Add a user…' : 'No more users (create them in Settings → Users)'}</option>
+                    <option value="">{usersBusy ? 'Loading users…' : free.length ? 'Add a user…' : 'No more users (create them in Settings → Users)'}</option>
                     {free.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                 </select>
                 <Button onClick={addUser} disabled={!pick}><Plus size={17} />Add</Button>

@@ -219,7 +219,7 @@ function ServerControl({ server, isAdmin, onDeleted }) {
                         <span className="font-mono text-accent-400">&gt;</span>
                         <input value={command} onChange={e => setCommand(e.target.value)} onKeyDown={onKey} disabled={!on || !may('console')}
                             placeholder={!may('console') ? 'Read-only console' : on ? 'Type a command (status, say, changelevel…)' : 'Start the server to send commands'}
-                            className="flex-1 h-7 bg-transparent text-white placeholder-gray-500 font-mono text-[13px] focus:outline-none disabled:cursor-not-allowed" />
+                            className="flex-1 h-7 bg-transparent text-white placeholder-gray-500 font-mono text-sm focus:outline-none disabled:cursor-not-allowed" />
                         <Button variant="primary" size="sm" onClick={send} disabled={!on || !may('console') || !command.trim()}><Send size={12} />Send</Button>
                     </div>
                 </Card>

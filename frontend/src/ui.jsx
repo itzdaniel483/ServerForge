@@ -12,7 +12,7 @@ const VARIANTS = {
 };
 
 export function Button({ variant = 'ghost', size = 'md', className = '', children, ...rest }) {
-    const sizes = { sm: 'h-7 px-2.5 text-xs', md: 'h-8 px-3 text-[13px]', lg: 'h-9 px-4 text-sm' };
+    const sizes = { sm: 'h-7 px-2.5 text-xs', md: 'h-8 px-3 text-sm', lg: 'h-9 px-4 text-sm' };
     return (
         <button
             className={`inline-flex items-center justify-center gap-1.5 rounded font-medium whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-400 ${sizes[size]} ${VARIANTS[variant]} ${className}`}
@@ -33,7 +33,7 @@ export function Panel({ title, actions, className = '', bodyClassName = 'p-4', c
         <Card className={className}>
             {(title || actions) && (
                 <div className="h-10 px-4 flex items-center gap-3 border-b border-gray-800">
-                    <h2 className="text-[13px] font-semibold text-gray-100 truncate">{title}</h2>
+                    <h2 className="text-sm font-semibold text-gray-100 truncate">{title}</h2>
                     {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
                 </div>
             )}
@@ -63,7 +63,7 @@ export function Status({ status }) {
 export function Stat({ label, value, tone = '', icon: Icon, meter, sub }) {
     return (
         <Card className="px-4 py-3 min-w-0">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-gray-500">
                 {Icon && <Icon size={13} />}{label}
             </div>
             <div className={`mt-1 text-xl font-semibold tabular-nums truncate ${tone || 'text-white'}`}>{value}</div>
@@ -89,7 +89,7 @@ export function PageHeader({ title, sub, actions }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-white">{title}</h1>
-                {sub && <p className="text-[13px] text-gray-400">{sub}</p>}
+                {sub && <p className="text-sm text-gray-400">{sub}</p>}
             </div>
             {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
@@ -104,7 +104,7 @@ export function Tabs({ items, value, onChange, className = '' }) {
                 const on = value === t.id;
                 return (
                     <button key={t.id} role="tab" aria-selected={on} onClick={() => onChange(t.id)}
-                        className={`relative flex items-center gap-1.5 h-9 px-3 text-[13px] font-medium whitespace-nowrap -mb-px border-b-2 transition-colors ${on ? 'border-accent-500 text-white' : 'border-transparent text-gray-400 hover:text-gray-100'}`}>
+                        className={`relative flex items-center gap-1.5 h-9 px-3 text-sm font-medium whitespace-nowrap -mb-px border-b-2 transition-colors ${on ? 'border-accent-500 text-white' : 'border-transparent text-gray-400 hover:text-gray-100'}`}>
                         {t.icon && <t.icon size={14} />}{t.label}
                     </button>
                 );
@@ -123,14 +123,14 @@ export function Field({ label, hint, children }) {
     );
 }
 
-export const inputClass = 'w-full h-8 bg-gray-950 text-white text-[13px] placeholder-gray-500 px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none transition-colors';
+export const inputClass = 'w-full h-8 bg-gray-950 text-white text-sm placeholder-gray-500 px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none transition-colors';
 
 export function Empty({ icon, title, sub, action }) {
     return (
         <Card className="flex flex-col items-center justify-center text-center py-14 border-dashed">
             <div className="text-gray-500 mb-3">{icon}</div>
             <div className="text-base font-semibold text-white">{title}</div>
-            {sub && <div className="text-[13px] text-gray-400 mt-1">{sub}</div>}
+            {sub && <div className="text-sm text-gray-400 mt-1">{sub}</div>}
             {action && <div className="mt-4">{action}</div>}
         </Card>
     );
@@ -138,7 +138,7 @@ export function Empty({ icon, title, sub, action }) {
 
 export function Notice({ tone = 'error', children }) {
     const tones = { error: 'border-stop-500 bg-stop-500/10 text-stop-200', ok: 'border-go-500 bg-go-500/10 text-go-200' };
-    return <div role="status" className={`border-l-2 rounded-sm px-3 py-2 text-[13px] ${tones[tone]}`}>{children}</div>;
+    return <div role="status" className={`border-l-2 rounded-sm px-3 py-2 text-sm ${tones[tone]}`}>{children}</div>;
 }
 
 // Art is behind API auth, so it is fetched with the token and kept as one object URL per game
@@ -173,7 +173,7 @@ export function GameArt({ gameId, name = '', className = '', imgClassName = 'obj
             {src ? (
                 <img src={src} alt="" onError={() => setSrc(null)} className={`absolute inset-0 w-full h-full object-cover ${imgClassName}`} />
             ) : (
-                <div className="absolute inset-0 grid place-items-center text-[10px] font-bold tracking-wider text-gray-400 select-none">{initials}</div>
+                <div className="absolute inset-0 grid place-items-center text-[12px] font-bold tracking-wider text-gray-400 select-none">{initials}</div>
             )}
             {shade && <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/50 to-transparent" />}
             {children}

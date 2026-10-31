@@ -80,7 +80,7 @@ export default function Installer({ onDone }) {
                 return (
                     <button key={n.id} role="radio" aria-checked={nodeId === n.id} disabled={installing || !ok} onClick={() => setNodeId(n.id)}
                         title={ok ? '' : n.online ? "This machine can't install servers yet" : 'This machine is offline'}
-                        className={`inline-flex items-center gap-2 h-8 px-3 rounded border text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/15 text-white border-accent-500' : 'bg-gray-900 text-gray-300 border-gray-700 hover:text-white'}`}>
+                        className={`inline-flex items-center gap-2 h-8 px-3 rounded border text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${nodeId === n.id ? 'bg-accent-500/15 text-white border-accent-500' : 'bg-gray-900 text-gray-300 border-gray-700 hover:text-white'}`}>
                         <OsIcon os={n.os} size={13} />{n.id === 'local' ? 'This panel' : n.name}
                         <span className="text-xs font-medium text-gray-400">{osLabel(n.os)}{n.id !== 'local' && !n.online ? ' · offline' : ''}</span>
                     </button>
@@ -131,7 +131,7 @@ export default function Installer({ onDone }) {
                         {shown.map(g => {
                             const on = game?.id === g.id;
                             const other = !g.supported && otherMachine(g);
-                            const row = 'w-full flex items-center gap-3 px-3 py-2 text-left text-[13px] leading-tight transition-colors disabled:cursor-not-allowed';
+                            const row = 'w-full flex items-center gap-3 px-3 py-2 text-left text-sm leading-tight transition-colors disabled:cursor-not-allowed';
                             if (other) return (
                                 <button key={g.id} disabled={installing} onClick={() => setNodeId(other.id)} title={`Switch to ${other.name}`} className={`${row} hover:bg-gray-800/50`}>
                                     <GameArt gameId={g.id} name={g.name} className="w-16 h-[30px] rounded-sm shrink-0" imgClassName="object-center grayscale opacity-60" />
@@ -150,16 +150,16 @@ export default function Installer({ onDone }) {
                                 </button>
                             );
                         })}
-                        {shown.length === 0 && <div className="px-3 py-6 text-[13px] text-gray-400">No games match.</div>}
+                        {shown.length === 0 && <div className="px-3 py-6 text-sm text-gray-400">No games match.</div>}
                     </div>
                 </Card>
 
                 <Card className="lg:sticky lg:top-16">
-                    <div className="h-10 px-4 flex items-center border-b border-gray-800 text-[13px] font-semibold text-gray-100">
+                    <div className="h-10 px-4 flex items-center border-b border-gray-800 text-sm font-semibold text-gray-100">
                         {game ? `New ${game.name} server${nodeId !== 'local' ? ` on ${machine.name}` : ''}` : 'New server'}
                     </div>
                     {!game ? (
-                        <div className="px-4 py-10 text-center text-[13px] text-gray-400">
+                        <div className="px-4 py-10 text-center text-sm text-gray-400">
                             <Download size={20} className="mx-auto mb-2 text-gray-500" />Pick a game from the list. Its settings appear here.
                         </div>
                     ) : (
@@ -172,9 +172,9 @@ export default function Installer({ onDone }) {
                                         <label key={m.id} className={`flex items-start gap-2.5 px-3 py-2 rounded border cursor-pointer ${mode === m.id ? 'border-accent-500 bg-accent-500/10' : 'border-gray-700 hover:border-gray-600'}`}>
                                             <input type="radio" name="game-mode" className="mt-0.5 accent-accent-500" checked={mode === m.id} onChange={() => setMode(m.id)} disabled={installing} />
                                             <span className="min-w-0">
-                                                <span className="block text-[13px] font-medium text-white">{m.name}</span>
+                                                <span className="block text-sm font-medium text-white">{m.name}</span>
                                                 {m.description && <span className="block text-xs text-gray-400">{m.description}</span>}
-                                                {m.downloads && <span className="block text-[11px] text-accent-300">Also downloads: {m.downloads}</span>}
+                                                {m.downloads && <span className="block text-[12px] text-accent-300">Also downloads: {m.downloads}</span>}
                                             </span>
                                         </label>
                                     ))}
@@ -182,16 +182,16 @@ export default function Installer({ onDone }) {
                                         <label className="block pt-1">
                                             <span className="block text-xs font-medium text-gray-300 mb-1">Workshop collection ID</span>
                                             <input value={collection} onChange={e => setCollection(e.target.value.replace(/\D/g, '').slice(0, 20))} inputMode="numeric" placeholder="e.g. 123456789" disabled={installing}
-                                                className="w-full h-8 bg-gray-950 text-white text-[13px] px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
-                                            <span className="block text-[11px] text-gray-500 mt-1">The number at the end of the collection's Steam link. Uses the Steam Web API key from Settings.</span>
+                                                className="w-full h-8 bg-gray-950 text-white text-sm px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
+                                            <span className="block text-[12px] text-gray-500 mt-1">The number at the end of the collection's Steam link. Uses the Steam Web API key from Settings.</span>
                                         </label>
                                     )}
                                     {currentMode?.customGamemode && (
                                         <label className="block">
                                             <span className="block text-xs font-medium text-gray-300 mb-1">Gamemode name</span>
                                             <input value={gmName} onChange={e => setGmName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40))} placeholder="e.g. prop_hunt" disabled={installing}
-                                                className="w-full h-8 bg-gray-950 text-white text-[13px] font-mono px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
-                                            <span className="block text-[11px] text-gray-500 mt-1">The folder name of the gamemode in the collection (shown on its Workshop page). Blank = sandbox.</span>
+                                                className="w-full h-8 bg-gray-950 text-white text-sm font-mono px-2.5 rounded border border-gray-700 focus:border-accent-500 focus:outline-none" />
+                                            <span className="block text-[12px] text-gray-500 mt-1">The folder name of the gamemode in the collection (shown on its Workshop page). Blank = sandbox.</span>
                                         </label>
                                     )}
                                 </div>
@@ -214,7 +214,7 @@ export default function Installer({ onDone }) {
 
             {(installing || logs.length > 0) && (
                 <Card>
-                    <div className="h-10 px-4 flex items-center justify-between border-b border-gray-800 text-[13px] font-semibold">
+                    <div className="h-10 px-4 flex items-center justify-between border-b border-gray-800 text-sm font-semibold">
                         <span className="text-gray-100">SteamCMD output</span>
                         {progress !== null && <span className="text-white tabular-nums">{progress.toFixed(0)}%</span>}
                     </div>

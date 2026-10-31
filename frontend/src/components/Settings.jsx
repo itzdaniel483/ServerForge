@@ -16,7 +16,7 @@ function Settings() {
                     <AuthSettings />
                     <SteamSettings />
                     <Panel title="Restart backend">
-                        <p className="text-[13px] text-gray-400">Restart ServerForge from the server console (Apps → ServerForge → Restart).</p>
+                        <p className="text-sm text-gray-400">Restart ServerForge from the server console (Apps → ServerForge → Restart).</p>
                         <div className="mt-3 flex items-center gap-2 text-xs text-warn-300"><AlertTriangle size={13} className="shrink-0" />Running game servers are stopped by a restart. Check nothing is in use first.</div>
                     </Panel>
                 </div>
@@ -65,9 +65,9 @@ function SteamSettings() {
 
     return (
         <Panel title="Steam Web API key">
-            {loading ? <div className="text-[13px] text-gray-500">Loading…</div> : (
+            {loading ? <div className="text-sm text-gray-500">Loading…</div> : (
                 <div className="space-y-2">
-                    <p className="text-[13px] text-gray-400">Used for servers that don't have their own key.</p>
+                    <p className="text-sm text-gray-400">Used for servers that don't have their own key.</p>
                     <div className="flex gap-2">
                         <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} aria-label="Steam Web API key"
                             placeholder={keySet ? 'Saved. Type a new key to replace it' : '32-character API key'} className={inputClass} />
@@ -150,15 +150,15 @@ function UserManager() {
                     </div>
                 </form>
             )}
-            {loading ? <div className="p-4 text-[13px] text-gray-400">Loading…</div> : (
+            {loading ? <div className="p-4 text-sm text-gray-400">Loading…</div> : (
                 <div className="overflow-x-auto">
-                    <table className="w-full text-[13px]">
+                    <table className="w-full text-sm">
                         <thead><tr><th className="th">User</th><th className="th">Role</th><th className="th hidden sm:table-cell">Created</th><th className="th text-right">Actions</th></tr></thead>
                         <tbody>
                             {users.map(user => (
                                 <tr key={user.id} className="hover:bg-gray-800/40">
                                     <td className="td font-medium text-white">{user.username}</td>
-                                    <td className="td"><span className={`inline-flex h-5 px-1.5 items-center rounded-sm border text-[11px] capitalize ${user.role === 'admin' ? 'border-accent-500/50 text-accent-300' : 'border-gray-700 text-gray-300'}`}>{user.role}</span></td>
+                                    <td className="td"><span className={`inline-flex h-5 px-1.5 items-center rounded-sm border text-[12px] capitalize ${user.role === 'admin' ? 'border-accent-500/50 text-accent-300' : 'border-gray-700 text-gray-300'}`}>{user.role}</span></td>
                                     <td className="td hidden sm:table-cell text-gray-400">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</td>
                                     <td className="td text-right">
                                         <Button size="sm" variant="quiet" onClick={() => handleDeleteUser(user.id, user.username)} title="Delete user" aria-label={`Delete user ${user.username}`}><Trash2 size={13} /></Button>
@@ -219,13 +219,13 @@ function AuthSettings() {
     const option = (mode, title, sub, onClick) => (
         <label className={`flex items-start gap-2.5 p-3 rounded border cursor-pointer ${authMode === mode ? 'border-accent-500 bg-accent-500/10' : 'border-gray-700 hover:border-gray-600'}`}>
             <input type="radio" name="authMode" className="mt-0.5 accent-accent-500" checked={authMode === mode} onChange={onClick} disabled={saving} />
-            <span><span className="block text-[13px] font-medium text-white">{title}</span><span className="block text-xs text-gray-400">{sub}</span></span>
+            <span><span className="block text-sm font-medium text-white">{title}</span><span className="block text-xs text-gray-400">{sub}</span></span>
         </label>
     );
 
     return (
         <Panel title="Sign-in method">
-            {loading ? <div className="text-[13px] text-gray-500">Loading…</div> : (
+            {loading ? <div className="text-sm text-gray-500">Loading…</div> : (
                 <div className="space-y-3">
                     <div className="grid sm:grid-cols-2 gap-2">
                         {option('local', 'Local accounts', 'Username and password', () => handleSave('local'))}

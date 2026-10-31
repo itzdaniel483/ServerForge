@@ -40,11 +40,11 @@ function Login({ authMode, onLogin }) {
             <div className="w-full max-w-sm">
                 <div className="flex items-center gap-2.5 mb-5"><Logo size={26} /><span className="text-base font-semibold tracking-tight text-white">ServerForge</span></div>
                 <div className="bg-gray-900 border border-gray-800 rounded-md">
-                    <div className="h-10 px-4 flex items-center border-b border-gray-800 text-[13px] font-semibold text-gray-100">{authMode === 'external' ? 'Sign in with Cloudflare' : 'Sign in'}</div>
+                    <div className="h-10 px-4 flex items-center border-b border-gray-800 text-sm font-semibold text-gray-100">{authMode === 'external' ? 'Sign in with Cloudflare' : 'Sign in'}</div>
                     <div className="p-4">
                         {authMode === 'external' ? (
                             <div className="space-y-3">
-                                <p className="text-[13px] text-gray-300 flex gap-2"><Shield size={15} className="text-accent-400 shrink-0 mt-0.5" />Open ServerForge from its Cloudflare Access address.</p>
+                                <p className="text-sm text-gray-300 flex gap-2"><Shield size={15} className="text-accent-400 shrink-0 mt-0.5" />Open ServerForge from its Cloudflare Access address.</p>
                                 <Button variant="primary" className="w-full" onClick={() => window.location.reload()}>Try again</Button>
                             </div>
                         ) : (
