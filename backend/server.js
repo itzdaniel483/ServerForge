@@ -344,6 +344,24 @@ app.get('/api/host', async (req, res) => {
     res.json(await hostMetrics.snapshot());
 });
 
+// Machine settings page (claude, Daniel 3730): folders, free space, where each server lives. Every panel answers for
+// itself; the hub asks a node over its link (action machine.info; older nodes say "update this machine").
+const { machineInfo } = require('./services/machineInfo');
+const localMachine = () => machineInfo({ servers: serverStore.getAll(), version: nodeUpdate.currentVersion(), statusOf: srv => processManager.getStatus(srv.id) || srv.status });
+app.get('/api/machine', requireAdmin, async (_req, res) => res.json(await localMachine()));
+app.get('/api/nodes/:id/machine', requireAdmin, async (req, res) => {
+    const id = req.params.id;
+    if (id === 'local') return res.json(await localMachine());
+    if (!nodeRegistry.list().some(n => n.id === id)) return res.status(404).json({ error: 'Unknown node', code: 'NODE_UNKNOWN' });
+    if (!nodeTransport?.listStatus()[id]?.online) return res.status(503).json({ error: 'That machine is offline', code: 'NODE_OFFLINE' });
+    if (!(nodeTransport.getCapabilities(id) || []).includes('machine.info')) return res.status(501).json({ error: 'Update this machine to see its settings', code: 'NODE_OUTDATED' });
+    const actor = { id: req.user.id || req.user.username, username: req.user.username, role: req.user.role };
+    try {
+        const r = await nodeTransport.request(id, 'machine.info', {}, actor, { timeoutMs: 20000 });
+        res.status(r.status).json(r.body);
+    } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 const nodeError = (res, err) => res.status(err.status || 400).json({ error: err.message, code: err.status === 404 ? 'NODE_UNKNOWN' : 'NODE_REQUEST_INVALID' });
 app.get('/api/nodes', requireAdmin, async (_req, res) => {
     const statuses = nodeTransport?.listStatus() || {};

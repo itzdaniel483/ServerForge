@@ -58,6 +58,13 @@ test('move a server from a node to the hub: fresh install, configs copied, runni
         await hub.api('POST', `/api/nodes/${candidate.candidateId}/approve`, { fingerprintConfirmed: true }, hub.token);
         const nodeId = candidate.candidateId, remoteId = `${nodeId}:sameid`;
         for (let i = 0; i < 80 && !(await hub.api('GET', '/api/servers', undefined, hub.token)).data.some(s => s.id === remoteId); i++) await pause(100);
+        // Machine settings page (Daniel 3730): the hub shows a node's folders and where each server lives.
+        const machine = await hub.api('GET', `/api/nodes/${nodeId}/machine`, undefined, hub.token);
+        assert.equal(machine.status, 200, JSON.stringify(machine.data));
+        assert.equal(machine.data.folders.find(f => f.key === 'servers').path, path.join(node.dir, 'servers'));
+        assert.equal(machine.data.servers.find(s => s.id === 'sameid').path, path.join(node.dir, 'servers', 'fixture'));
+        assert.ok(machine.data.folders.every(f => typeof f.label === 'string' && 'free' in f));
+        assert.equal((await hub.api('GET', '/api/nodes/local/machine', undefined, hub.token)).data.folders[0].path, path.join(hub.dir, 'servers'));
         // Schedules and access come along (checklist): one task on the node server, one user grant kept by the hub.
         assert.equal((await hub.api('POST', '/api/users', { username: 'mover', password: 'mover-password-123', role: 'user' }, hub.token)).status, 200);
         assert.equal((await hub.api('PUT', `/api/server/${remoteId}/access`, { access: [{ username: 'mover', perms: ['power', 'console'] }] }, hub.token)).status, 200);

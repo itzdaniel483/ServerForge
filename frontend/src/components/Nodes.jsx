@@ -3,7 +3,7 @@
 // admin confirms its key fingerprint, and removes nodes. API: codex, docs/MULTI-NODE.md (#3359).
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Network, Plus, Trash2, Download, X, ShieldCheck, Monitor, Server as ServerIcon, Clock, Cpu, MemoryStick, HardDrive } from 'lucide-react';
+import { Network, Plus, Trash2, Download, X, ShieldCheck, Monitor, Server as ServerIcon, Clock, Cpu, MemoryStick, HardDrive, Folder, Copy, Check, ChevronRight } from 'lucide-react';
 import { Button, Card, Notice, PageHeader, Meter } from '../ui';
 import { errorText } from '../api';
 
@@ -24,6 +24,7 @@ export default function Nodes() {
     const [config, setConfig] = useState(null);
     const [error, setError] = useState('');
     const [enrolment, setEnrolment] = useState(null);
+    const [openId, setOpenId] = useState(null);   // machine settings card (Daniel 3730)
 
     // One-click updates (Daniel #gamemanager 3591/3595): the version the panel can push to nodes.
     const [updateInfo, setUpdateInfo] = useState(null);
@@ -68,11 +69,13 @@ export default function Nodes() {
 
             {pending.map(c => <PendingCard key={c.id} candidate={c} onDone={load} onError={setError} />)}
 
+            {openId && nodes.some(n => n.id === openId) && <MachineCard node={nodes.find(n => n.id === openId)} onClose={() => setOpenId(null)} />}
+
             <Card>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead><tr><th className="th w-28">Status</th><th className="th">Machine</th><th className="th hidden md:table-cell w-36">CPU</th><th className="th hidden md:table-cell w-36">RAM</th><th className="th hidden lg:table-cell w-36">Disk</th><th className="th hidden sm:table-cell">Connection</th><th className="th hidden md:table-cell">Version</th><th className="th text-right">Actions</th></tr></thead>
-                        <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} latest={updateInfo?.version} onUpdated={load} />)}</tbody>
+                        <tbody>{nodes.map(n => <NodeRow key={n.id} node={n} onRemove={remove} latest={updateInfo?.version} onUpdated={load} open={openId === n.id} onOpen={() => setOpenId(openId === n.id ? null : n.id)} />)}</tbody>
                     </table>
                 </div>
                 {remote.length === 0 && pending.length === 0 && !enrolment && (
@@ -113,7 +116,7 @@ function UpdateCell({ node, latest, onUpdated }) {
     );
 }
 
-function NodeRow({ node, onRemove, latest, onUpdated }) {
+function NodeRow({ node, onRemove, latest, onUpdated, open, onOpen }) {
     const local = node.id === 'local';
     const h = node.host || {};
     const meters = [
@@ -122,13 +125,13 @@ function NodeRow({ node, onRemove, latest, onUpdated }) {
         { label: 'Disk', v: pct(h.disk?.used, h.disk?.total), cls: 'hidden lg:table-cell' },
     ];
     return (
-        <tr className="hover:bg-gray-800/40">
+        <tr className={`hover:bg-gray-800/40 ${open ? 'bg-gray-800/50' : ''}`}>
             <td className="td"><span className={`inline-flex items-center gap-1.5 text-xs font-medium ${node.online ? 'text-go-300' : 'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${node.online ? 'bg-go-400' : 'bg-gray-500'}`} />{node.online ? 'Online' : 'Offline'}</span></td>
             <td className="td">
                 <div className="flex items-center gap-2.5">
                     <span className="text-gray-400"><OsIcon os={node.os} size={15} /></span>
                     <span className="min-w-0">
-                        <span className="flex items-center gap-2"><span className="font-medium text-white truncate">{node.name}</span>{local && <span className="h-4 px-1 inline-flex items-center rounded-sm border border-accent-500/50 text-[12px] font-medium text-accent-300">This panel</span>}</span>
+                        <span className="flex items-center gap-2"><button type="button" onClick={onOpen} aria-expanded={open} title="Show this machine's settings" className="font-medium text-white truncate hover:text-accent-300 inline-flex items-center gap-1">{node.name}<ChevronRight size={14} className={`text-gray-500 transition-transform ${open ? 'rotate-90' : ''}`} /></button>{local && <span className="h-4 px-1 inline-flex items-center rounded-sm border border-accent-500/50 text-[12px] font-medium text-accent-300">This panel</span>}</span>
                         <span className="block text-xs text-gray-500">{osName(node.os)}{node.version ? ` · v${node.version}` : ''}</span>
                     </span>
                 </div>
@@ -234,6 +237,86 @@ function PendingCard({ candidate, onDone, onError }) {
                 <span className="text-sm font-semibold text-gray-100">The fingerprint matches what the new machine shows</span>
             </label>
             <Button variant="primary" onClick={approve} disabled={!confirmed || !candidate.proved || busy}><ShieldCheck size={17} />Approve node</Button>
+        </Card>
+    );
+}
+
+// Machine settings card (claude, Daniel #gamemanager 3730): folders, free space and where each server lives.
+const fmtBytes = b => (b == null ? '—' : b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
+const fmtUptime = s => (s >= 86400 ? `${Math.floor(s / 86400)} d ${Math.floor((s % 86400) / 3600)} h` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`);
+function CopyPath({ text }) {
+    const [done, setDone] = useState(false);
+    return (
+        <button type="button" className="text-gray-500 hover:text-white shrink-0" aria-label={`Copy ${text}`} title="Copy"
+            onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1200); }).catch(() => {})}>
+            {done ? <Check size={14} className="text-go-300" /> : <Copy size={14} />}
+        </button>
+    );
+}
+function MachineCard({ node, onClose }) {
+    const [info, setInfo] = useState(null);
+    const [problem, setProblem] = useState(null);
+    useEffect(() => {
+        let alive = true;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setInfo(null); setProblem(null);
+        axios.get(`/api/nodes/${encodeURIComponent(node.id)}/machine`)
+            .then(r => { if (alive) setInfo(r.data); })
+            .catch(err => { if (alive) setProblem({ code: err?.response?.data?.code, text: errorText(err) }); });
+        return () => { alive = false; };
+    }, [node.id, node.online, node.version]);
+    const facts = info ? [
+        ['Computer name', info.hostname], ['System', `${osName(info.platform)} · ${info.os}`], ['ServerForge', vLabel(info.version)],
+        ['CPU cores', info.cpus], ['Memory', fmtBytes(info.memory)], ['Up for', fmtUptime(info.uptime)],
+    ] : [];
+    return (
+        <Card className="p-4 space-y-4 ring-1 ring-accent-400/30">
+            <div className="flex items-center gap-3">
+                <span className="text-accent-300"><OsIcon os={node.os} size={20} /></span>
+                <div className="flex-1 min-w-0">
+                    <div className="text-lg font-semibold text-white truncate">{node.name}</div>
+                    <div className="text-sm text-gray-400">Machine settings · read only</div>
+                </div>
+                <Button size="sm" variant="quiet" onClick={onClose} aria-label="Close machine settings"><X size={16} />Close</Button>
+            </div>
+            {problem && <Notice tone={problem.code === 'NODE_OUTDATED' ? 'ok' : undefined}>{problem.code === 'NODE_OUTDATED' ? 'This machine needs the latest update to show its settings. Use "Update" in the list below, then open this again.' : problem.text}</Notice>}
+            {!info && !problem && <div className="text-sm text-gray-400">Loading…</div>}
+            {info && (
+                <>
+                    <dl className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                        {facts.map(([k, v]) => <div key={k} className="glass rounded-lg px-3 py-2 min-w-0"><dt className="text-xs uppercase tracking-wider text-gray-500">{k}</dt><dd className="text-sm text-gray-100 truncate" title={String(v)}>{v}</dd></div>)}
+                    </dl>
+                    <div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Folders</div>
+                        <div className="overflow-x-auto"><table className="w-full text-sm">
+                            <thead><tr><th className="th w-44">What</th><th className="th">Where</th><th className="th w-56 hidden sm:table-cell">Free space</th></tr></thead>
+                            <tbody>{info.folders.map(f => (
+                                <tr key={f.key}>
+                                    <td className="td"><span className="inline-flex items-center gap-2 text-gray-200"><Folder size={14} className="text-gray-500" />{f.label}</span></td>
+                                    <td className="td"><span className="flex items-center gap-2 min-w-0"><span className="font-mono text-xs text-gray-200 break-all">{f.path}</span><CopyPath text={f.path} />{!f.exists && <span className="text-xs text-warn-300 shrink-0">not created yet</span>}</span></td>
+                                    <td className="td hidden sm:table-cell">{f.total ? <div><div className="text-xs text-gray-300 tabular-nums">{fmtBytes(f.free)} free of {fmtBytes(f.total)}</div><Meter value={pct(f.total - f.free, f.total)} label={`${f.label} disk used`} className="mt-1" /></div> : <span className="text-gray-600">—</span>}</td>
+                                </tr>
+                            ))}</tbody>
+                        </table></div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Servers on this machine ({info.servers.length})</div>
+                        {info.servers.length === 0 ? <div className="text-sm text-gray-500">None yet.</div> : (
+                            <div className="overflow-x-auto"><table className="w-full text-sm">
+                                <thead><tr><th className="th">Server</th><th className="th w-28">Status</th><th className="th w-24 hidden sm:table-cell">Port</th><th className="th">Folder</th></tr></thead>
+                                <tbody>{info.servers.map(srv => (
+                                    <tr key={srv.id}>
+                                        <td className="td"><div className="text-gray-100">{srv.name}</div>{srv.game && srv.game !== srv.name && <div className="text-xs text-gray-500">{srv.game}</div>}</td>
+                                        <td className="td text-xs capitalize text-gray-300">{srv.status}</td>
+                                        <td className="td hidden sm:table-cell font-mono text-xs text-gray-300">{srv.port ?? '—'}</td>
+                                        <td className="td">{srv.path ? <span className="flex items-center gap-2 min-w-0"><span className="font-mono text-xs text-gray-200 break-all">{srv.path}</span><CopyPath text={srv.path} /></span> : <span className="text-gray-600">—</span>}</td>
+                                    </tr>
+                                ))}</tbody>
+                            </table></div>
+                        )}
+                    </div>
+                </>
+            )}
         </Card>
     );
 }

@@ -12,7 +12,7 @@ const identifier = (value, name) => {
     return nativeId(value, name);
 };
 const definitions = {
-    'servers.list': ['GET', '/api/servers'], host: ['GET', '/api/host'], catalog: ['GET', '/api/games'],
+    'servers.list': ['GET', '/api/servers'], host: ['GET', '/api/host'], 'machine.info': ['GET', '/api/machine'], catalog: ['GET', '/api/games'],
     'server.status': ['GET', '/api/server/:serverId/status'], 'console.read': ['GET', '/api/server/:serverId/logs'],
     'power.start': ['POST', '/api/server/start', ['id']], 'power.stop': ['POST', '/api/server/stop', ['id']],
     'console.command': ['POST', '/api/server/:serverId/command', ['command']],
