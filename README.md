@@ -1,123 +1,96 @@
 # ServerForge
 
-<div align="center">
+A self-hosted panel for game servers on Linux and Windows, with local accounts, per-server access, live console output and connected machines.
 
-![ServerForge Banner](https://via.placeholder.com/800x200/111827/3b82f6?text=SERVER+FORGE)
+![ServerForge server dashboard with sample data](screenshots/servers.png)
 
-**We are excited to announce the first official release of ServerForge, a modern, high-performance game server management panel**
-Built for speed, security, and ease of use.
+## Features
 
-[Features](#features) • [Installation](#installation) • [Supported Games](#supported-games) • [Documentation](#documentation)
+- Pick a game, then choose the machine that will run it. The catalogue lists 34 games; availability depends on the machine's OS.
+- Start, stop and restart servers; view console output and send commands.
+- Edit files, manage backups, schedule tasks and inspect activity.
+- Connect approved nodes over an authenticated TLS link; view machine folders, capacity and server locations.
+- Move supported server configurations and saves between machines. The destination installs its own game binaries, using its ready cache when available. Moves preserve supported schedules, access grants and Workshop collection settings, with warnings if a step fails.
+- Manage users, reset passwords, disable accounts and change roles. Account changes invalidate existing sessions.
+- Install supported plugins and set Workshop collections locally or on compatible nodes. There is no plugin uninstall action yet.
+- Download, update, cancel and resume each machine's game cache. Caches are OS-specific; Windows cache files cannot supply Linux installations. Node-to-node cache copying is not implemented.
 
-</div>
+## Screenshots
 
----
+These screenshots use sample users, machine names and documentation IP addresses.
 
-## 🚀 Features
+| Install a server | Connected machines |
+|---|---|
+| ![Install](screenshots/install.png) | ![Nodes](screenshots/nodes.png) |
 
-- 🎮 **Multi-Game Support** - Native support for Source Engine, Rust, ARK, and more.
-- ⚡ **Instant Deployment** - Smart pre-caching system for lightning-fast server installs.
-- 🛡️ **Enterprise Security** - Cloudflare Zero Trust integration & role-based access control.
-- 📊 **Real-Time Console** - Live server monitoring, logs, and player management.
-- 📂 **Web File Manager** - Edit configuration files directly from your browser.
-- 🔄 **Automated Backups** - Schedule backups to keep your data safe.
-- 🔌 **Plugin System** - Extensible architecture for custom functionality.
+| Plugins | Server access |
+|---|---|
+| ![Plugins](screenshots/server-plugins.png) | ![Access](screenshots/server-access.png) |
 
-## 🛠️ System Requirements
+| Users | Cache updates |
+|---|---|
+| ![Users](screenshots/settings-users.png) | ![Cache](screenshots/settings-cache.png) |
 
-| Component | Requirement |
-|-----------|-------------|
-| **OS** | Windows 10/11, Linux (Ubuntu/Debian), or macOS |
-| **Node.js** | **Version 18 or higher** (Required) |
-| **RAM** | 4GB+ Recommended |
-| **Disk** | 10GB+ (varies by game) |
+![Move a server](screenshots/move-dialog.png)
 
----
+## Run from source
 
-## 📦 Installation
+Use Node.js 22 and npm. Linux and Windows are the tested host platforms; individual games have their own requirements. Steam games need SteamCMD and sufficient disk space. On Debian/Ubuntu, SteamCMD also needs the appropriate 32-bit runtime libraries, commonly `lib32gcc-s1`.
 
-### 🪟 Windows (Quick Start)
+```sh
+npm ci --prefix backend
+npm ci --prefix frontend
+npm run build --prefix frontend
+```
 
-1.  **Prerequisite:** Ensure **Node.js v18+** is installed. [Download here](https://nodejs.org/).
-2.  **Download & Extract:** Unzip `ServerForge_v1.0.zip` to a folder of your choice (e.g., `C:\ServerForge`).
-3.  **Run Installer:**
-    *   Right-click the Start button and select **Terminal (Admin)** or **PowerShell (Admin)**.
-    *   Navigate to your folder: `cd C:\ServerForge`
-    *   Run this command to set up dependencies:
-        ```powershell
-        Set-ExecutionPolicy Bypass -Scope Process -Force; .\installers\windows\install.ps1
-        ```
-4.  **Start ServerForge:**
-    *   Ensure you are in the root `ServerForge_v1.0` folder.
-    *   Run:
-        ```powershell
-        npm start
-        ```
-5.  **Access the Panel:**
-    *   Open your browser to: **`http://localhost:3000`**
-    *   **Username:** `admin`
-    *   **Password:** set `ADMIN_PASSWORD` before the first start, or read the random one from `backend/data/initial-admin-password`. Change it in Settings → Account.
+Start the panel bound to loopback. In a POSIX shell:
 
-> [!TIP]
-> If you see an "Execution Policy" error, ensure you are running PowerShell as **Administrator**.
+```sh
+HOST=127.0.0.1 PORT=3000 npm start
+```
 
-### 🐧 Linux / macOS
+Or in PowerShell:
 
-1.  **Run the installer:**
-    ```bash
-    chmod +x installers/linux/install.sh
-    ./installers/linux/install.sh
-    ```
-2.  **Start the panel:**
-    ```bash
-    npm start
-    ```
+```powershell
+$env:HOST = '127.0.0.1'
+$env:PORT = '3000'
+npm start
+```
 
-### 🐳 Docker (Recommended for Production)
+Open `http://localhost:3000`. The initial username is `admin`. Before the first start, set `ADMIN_PASSWORD` to your chosen password (at least eight characters), or retrieve the generated password from `backend/data/initial-admin-password`. Change it under Account after signing in. There is no shared default password.
 
-Docker deployment provides easy multi-instance support and simplified deployment to platforms like Dokploy.
+For access from another device, configure a deliberate bind address, firewall rules and HTTPS. Keep data, backups, keys and credentials outside version control. Run a long-lived installation under a service manager; deployment examples are in `deploy/`. The bundled legacy installer scripts are not required for the source setup above.
 
-1.  **Setup environment:**
-    ```bash
-    copy .env.example .env
-    ```
-2.  **Build and run:**
-    ```bash
-    docker-compose up -d
-    ```
-2.  **Access the panel:** Open `http://localhost:3000`
-    *   User: `admin`
-    *   Password: `ADMIN_PASSWORD`, or the random one in `data/initial-admin-password`
+## Connected Windows nodes
 
-**For detailed Docker deployment instructions**, including:
-- Dokploy deployment
-- Multi-instance setup
-- Environment configuration
-- Production best practices
+Use Nodes → Add node and follow [the multi-node guide](docs/MULTI-NODE.md). The Windows node package has its own version, separate from panel release tags. Update a node through Nodes → Update when the panel offers it. Stop games first when testing a node update; verify your own Windows installation before relying on unattended operation.
 
-See **[DOCKER.md](DOCKER.md)** for the complete guide.
+```mermaid
+flowchart LR
+    Browser[Browser] --> Hub[ServerForge panel]
+    Hub --> Local[Local game servers]
+    Node[Approved Windows or Linux node] -->|Authenticated TLS link| Hub
+    Node --> Remote[Node game servers]
+```
 
+## Documentation
 
-## 🎮 Supported Games
+- [User guide](docs/USER-GUIDE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Multi-node setup and operation](docs/MULTI-NODE.md)
+- [Backend protocol](docs/MULTI-NODE-BACKEND.md)
+- [Docker deployment](DOCKER.md)
+- [Release notes](docs/RELEASE-1.11.md)
 
-ServerForge supports 16+ games out of the box, including:
+## Development checks
 
-*   **FPS:** CS:GO, CS:Source, TF2, L4D2, Insurgency
-*   **Survival:** Rust, ARK: Survival Evolved, 7 Days to Die, The Forest, Project Zomboid
-*   **Sandbox:** Garry's Mod
-*   **Classic:** Half-Life 2: DM, Day of Defeat: Source
+```sh
+npm test --prefix backend
+npm run build --prefix frontend
+```
 
-## 🔒 Authentication
+The backend suite uses isolated fixtures. Real Steam downloads, Windows service updates and plugin installation on your own node require additional machine-specific checks.
 
-ServerForge supports two authentication modes:
+## License
 
-1.  **Local Auth (Default):** Standard username/password login.
-2.  **External Auth:** Integration with **Cloudflare Zero Trust** for enterprise-grade security (SSO, MFA).
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the ISC License.
+ISC. See the package metadata and included license files.

@@ -113,3 +113,12 @@ Owner for this release checklist: codex. Daniel approved the seven fixes plus to
 - [ ] Daniel's Windows check: actual plugin installation and a real Steam cache refresh remain unverified here.
 
 Release flow: Daniel approval → codex review + repeat tests → commit dependencies → push claude/overhaul → Daniel checks board outcome.
+
+## Main-branch release 1.11 (2026-10-31, codex)
+Daniel approved refreshed docs/images, main-only history and a tagged release in card comments at 19:09, 19:14 and 19:17.
+- [x] Replaced placeholder README with current features, source setup, limitations and sample screenshots; added user guide and release notes.
+- [x] Reviewed 34 legacy screenshots: several contain LAN addresses/machine names. Removed the legacy set from the release tree and installed eight reviewed sample-data screenshots (generic users, TEST-NET addresses). Existing Git history is unchanged.
+- [x] Corrected Plugins API list rendering and removed misleading uninstall wording.
+- [x] Browser regression with mocked API: installed/available lists render, Install sends correct plugin ID, refreshed plugin appears under Installed, no page errors.
+- [x] Full backend checks remain 89/89 twice; only frontend/docs/images changed since those checks.
+- [ ] Push main, verify remote, remove merged feature branch, publish tag/release 1.11.

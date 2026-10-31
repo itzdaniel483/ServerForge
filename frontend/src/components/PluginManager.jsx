@@ -17,8 +17,9 @@ function PluginManager({ server }) {
         }
         try {
             const res = await axios.get(`/api/server/${server.id}/plugins`);
-            setPlugins(res.data.installed || []);
-            setAvailablePlugins(res.data.available || []);
+            const list = Array.isArray(res.data) ? res.data : [];   // the API sends one list, each with an installed flag
+            setPlugins(list.filter(p => p.installed));
+            setAvailablePlugins(list.filter(p => !p.installed));
             setLoading(false);
         } catch (err) {
             console.error('Failed to fetch plugins:', err);
@@ -147,7 +148,7 @@ function PluginManager({ server }) {
             {/* Info */}
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
                 <p className="text-blue-400 text-sm">
-                    <strong>Note:</strong> Plugins extend your server's functionality. Make sure to restart your server after installing or uninstalling plugins.
+                    <strong>Note:</strong> Plugins extend your server's functionality. Make sure to restart your server after installing plugins. Plugin removal is not available in the panel yet.
                 </p>
             </div>
 
