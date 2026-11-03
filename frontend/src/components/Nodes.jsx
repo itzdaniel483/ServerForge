@@ -24,6 +24,7 @@ export default function Nodes() {
     const [config, setConfig] = useState(null);
     const [error, setError] = useState('');
     const [enrolment, setEnrolment] = useState(null);
+    const [choosing, setChoosing] = useState(false);   // "where is this machine?" (public address card, Daniel chose port forward)
     const [openId, setOpenId] = useState(null);   // machine settings card (Daniel 3730)
 
     // One-click updates (Daniel #gamemanager 3591/3595): the version the panel can push to nodes.
@@ -43,9 +44,11 @@ export default function Nodes() {
         return () => clearInterval(t);
     }, [load]);
 
-    async function addNode() {
+    function addNode() { setError(''); setChoosing(true); }
+    async function createEnrolment(where) {
         setError('');
-        try { setEnrolment((await axios.post('/api/nodes/enrol')).data); load(); } catch (err) { setError(errorText(err)); }
+        try { setEnrolment({ ...(await axios.post('/api/nodes/enrol', { where })).data, where }); setChoosing(false); load(); }
+        catch (err) { setError(errorText(err)); }
     }
     async function remove(node) {
         if (!window.confirm(`Remove ${node.name}? Its key is revoked and it disconnects now. Its game servers keep running on that machine.`)) return;
@@ -58,13 +61,14 @@ export default function Nodes() {
     return (
         <div className="space-y-4">
             <PageHeader title="Nodes" sub="Other ServerForge machines joined to this panel, for example a Windows PC for Windows-only games."
-                actions={<Button variant="primary" onClick={addNode} disabled={!config?.enabled || !!enrolment}><Plus size={15} />Add node</Button>} />
+                actions={<Button variant="primary" onClick={addNode} disabled={!config?.enabled || !!enrolment || choosing}><Plus size={15} />Add node</Button>} />
 
             {error && <Notice>{error}</Notice>}
             {config && !config.enabled && (
                 <Notice tone="ok">Node connections are switched off on this panel. They're turned on during deployment, once a Windows PC is ready to join.</Notice>
             )}
 
+            {choosing && !enrolment && <WherePanel config={config} onCreate={createEnrolment} onSaved={load} onCancel={() => setChoosing(false)} onError={setError} />}
             {enrolment && <EnrolPanel enrolment={enrolment} onClose={() => { setEnrolment(null); load(); }} onError={setError} />}
 
             {pending.map(c => <PendingCard key={c.id} candidate={c} onDone={load} onError={setError} />)}
@@ -152,6 +156,58 @@ function NodeRow({ node, onRemove, latest, onUpdated, open, onOpen }) {
 
 // The one-time bundle is shown once. It's offered as a file download (never shown as text or
 // copied to the clipboard) because the node client reads it from a private file.
+const WhereOption = ({ id, selected, onPick, title, sub }) => (
+    <button type="button" onClick={() => onPick(id)} aria-pressed={selected === id}
+        className={`text-left rounded border px-3 py-2.5 ${selected === id ? 'border-blue-500 bg-gray-900' : 'border-gray-700 hover:border-gray-500'}`}>
+        <div className="font-bold text-white text-sm">{title}</div>
+        <div className="text-xs text-gray-400 mt-0.5 break-all">{sub}</div>
+    </button>
+);
+
+// "Where is this machine?" LAN nodes dial the LAN address; outside nodes dial the saved public address.
+function WherePanel({ config, onCreate, onSaved, onCancel, onError }) {
+    const [where, setWhere] = useState('lan');
+    const [address, setAddress] = useState(config?.publicAddress || '');
+    const [busy, setBusy] = useState(false);
+    async function go() {
+        setBusy(true); onError('');
+        try {
+            if (where === 'outside' && address.trim() !== (config?.publicAddress || '')) {
+                await axios.put('/api/nodes/public-address', { publicAddress: address.trim() });
+                onSaved();
+            }
+            await onCreate(where);
+        } catch (err) { onError(errorText(err)); }
+        setBusy(false);
+    }
+    const outsideReady = where !== 'outside' || address.trim();
+    return (
+        <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+                <div className="font-bold text-white text-sm">Add a node: where is this machine?</div>
+                <button type="button" onClick={onCancel} className="text-gray-400 hover:text-white" aria-label="Cancel"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <WhereOption id="lan" selected={where} onPick={setWhere} title="On this network" sub={`Connects to ${config?.hubUrl || 'the panel on this network'}`} />
+                <WhereOption id="outside" selected={where} onPick={setWhere} title="Somewhere else, over the internet" sub={config?.outsideHubUrl ? `Connects to ${config.outsideHubUrl}` : 'Uses your public address'} />
+            </div>
+            {where === 'outside' && (
+                <div className="space-y-1.5">
+                    <label className="block text-xs text-gray-400" htmlFor="node-public-address">Public address (saved for next time)</label>
+                    <input id="node-public-address" value={address} onChange={e => setAddress(e.target.value)} maxLength={260}
+                        placeholder={`home.example.com:${config?.listenPort || 3231}`}
+                        className="w-full md:w-96 bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white font-mono" />
+                    <div className="text-xs text-gray-500">Your home’s domain or public IP. With Cloudflare it must be DNS only (grey cloud). Port defaults to {config?.listenPort || 3231}.</div>
+                </div>
+            )}
+            <div className="flex gap-2">
+                <Button variant="primary" onClick={go} disabled={busy || !outsideReady}>{busy ? 'Working…' : 'Create pairing file'}</Button>
+                <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+            </div>
+        </Card>
+    );
+}
+
 function EnrolPanel({ enrolment, onClose, onError }) {
     const [left, setLeft] = useState(() => Math.max(0, enrolment.expiresAt - Date.now()));
     const [saved, setSaved] = useState(false);
@@ -161,7 +217,7 @@ function EnrolPanel({ enrolment, onClose, onError }) {
     }, [enrolment.expiresAt]);
 
     function download() {
-        const blob = new Blob([JSON.stringify(enrolment, null, 2)], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify({ ...enrolment, where: undefined }, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), { href: url, download: 'serverforge-enrolment.json' });
         a.click();
@@ -202,6 +258,9 @@ function EnrolPanel({ enrolment, onClose, onError }) {
                     <div className="text-gray-400">It appears below as waiting. Check the fingerprint matches, tick, approve. Then delete the file.</div>
                 </li>
             </ol>
+            {enrolment.where === 'outside' && (
+                <Notice tone="ok">This file connects over the internet to <span className="font-mono">{enrolment.hubUrl}</span>. It only works once your router forwards TCP {(() => { try { return new URL(enrolment.hubUrl).port || 3231; } catch { return 3231; } })()} to this panel and the firewall allows that PC’s public IP. Send claude that IP first.</Notice>
+            )}
             <div className="text-xs text-gray-500">Hub fingerprint (the new machine checks this): <span className="font-mono text-gray-300">{groupPrint(enrolment.hubFingerprint)}</span></div>
         </Card>
     );

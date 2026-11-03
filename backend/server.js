@@ -12,6 +12,7 @@ const pluginService = require('./services/pluginService');
 
 const userStore = require('./services/userStore');
 const settingsStore = require('./services/settingsStore');
+const { normalizePublicAddress, outsideHubUrl } = require('./services/nodePublicAddress');
 const { authMiddleware, socketAuth, JWT_SECRET, validTeamDomain } = require('./middleware/auth');
 const { safeJoin, isInside, isNumericId, isBackupName, SERVERS_ROOT, requireAdmin, loginBlocked, loginFailed, loginSucceeded } = require('./middleware/guard');
 const cron = require('node-cron');
@@ -373,16 +374,38 @@ app.get('/api/nodes', requireAdmin, async (_req, res) => {
         })]);
 });
 app.get('/api/nodes/pending', requireAdmin, (_req, res) => res.json(nodeRegistry.listPending()));
+// Node listener port (default for a saved public address without a port).
+const nodeListenPort = () => { try { return Number(new URL(nodeTransport.hubUrl).port) || 3231; } catch { return 3231; } };
+const lanHubUrl = () => process.env.NODE_PUBLIC_URL || nodeTransport?.hubUrl || null;
 app.get('/api/nodes/config', requireAdmin, async (_req, res) => {
     await nodeTransportReady;
-    res.json({ enabled: !!nodeTransport, hubUrl: process.env.NODE_PUBLIC_URL || nodeTransport?.hubUrl || null, hubFingerprint: nodeTransport?.fingerprint || null });
+    const saved = (await settingsStore.getSettings()).nodePublicAddress || '';
+    let outside = null; try { outside = nodeTransport ? outsideHubUrl(saved, lanHubUrl(), nodeListenPort()) : null; } catch { outside = null; }
+    res.json({ enabled: !!nodeTransport, hubUrl: lanHubUrl(), hubFingerprint: nodeTransport?.fingerprint || null,
+        publicAddress: saved, outsideHubUrl: outside, listenPort: nodeTransport ? nodeListenPort() : null });
+});
+// Save the public address used by "Somewhere else" pairing files. '' clears it.
+app.put('/api/nodes/public-address', requireAdmin, async (req, res) => {
+    await nodeTransportReady;
+    try {
+        const value = normalizePublicAddress(req.body?.publicAddress, nodeTransport ? nodeListenPort() : 3231);
+        await settingsStore.updateSettings({ nodePublicAddress: value });
+        audit(req, 'node-public-address', null, value || '(cleared)');
+        res.json({ publicAddress: value, outsideHubUrl: value && nodeTransport ? outsideHubUrl(value, lanHubUrl(), nodeListenPort()) : null });
+    } catch (err) { res.status(400).json({ error: err.message, code: 'NODE_PUBLIC_ADDRESS_INVALID' }); }
 });
 app.post('/api/nodes/enrol', requireAdmin, async (req, res) => {
     await nodeTransportReady;
     if (!nodeTransport) return res.status(503).json({ error: 'Configure the dedicated TLS node listener first', code: 'NODE_LISTENER_DISABLED' });
     try {
-        const bundle = nodeRegistry.createEnrolment({ hubUrl: process.env.NODE_PUBLIC_URL || nodeTransport.hubUrl, hubFingerprint: nodeTransport.fingerprint });
-        audit(req, 'node-enrol', null, bundle.codeId);
+        const where = req.body?.where === 'outside' ? 'outside' : 'lan';
+        let hubUrl = lanHubUrl();
+        if (where === 'outside') {
+            hubUrl = outsideHubUrl((await settingsStore.getSettings()).nodePublicAddress, lanHubUrl(), nodeListenPort());
+            if (!hubUrl) return res.status(400).json({ error: 'Save your public address first', code: 'NODE_PUBLIC_ADDRESS_MISSING' });
+        }
+        const bundle = nodeRegistry.createEnrolment({ hubUrl, hubFingerprint: nodeTransport.fingerprint });
+        audit(req, where === 'outside' ? 'node-enrol-outside' : 'node-enrol', null, bundle.codeId);
         res.setHeader('Cache-Control', 'no-store');
         res.status(201).json(bundle);
     }

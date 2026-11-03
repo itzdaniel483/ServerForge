@@ -91,6 +91,34 @@ test('enabled node API enrols, audits, pairs, approves and removes through real 
         assert.ok(first.data.expiresAt > Date.now());
         assert.equal(first.data.hubUrl, config.data.hubUrl);
         assert.equal((await request('DELETE', `/api/nodes/enrol/${first.data.codeId}`, adminToken)).status, 200);
+
+        // Public address for outside nodes (claude, 2026-11-03): saved once, used only by "Somewhere else" pairing files.
+        assert.equal(config.data.publicAddress, '');
+        assert.equal(config.data.outsideHubUrl, null);
+        let outside = await request('POST', '/api/nodes/enrol', adminToken, { where: 'outside' });
+        assert.equal(outside.status, 400); assert.equal(outside.data.code, 'NODE_PUBLIC_ADDRESS_MISSING');
+        assert.equal((await request('PUT', '/api/nodes/public-address', user.data.token, { publicAddress: 'home.example.com' })).status, 403);
+        for (const bad of ['wss://home.example.com', 'home.example.com/x', '192.168.1.20', 'localhost', 'a b', 'home.example.com:99999', 'user@home.example.com']) {
+            const r = await request('PUT', '/api/nodes/public-address', adminToken, { publicAddress: bad });
+            assert.equal(r.status, 400, `accepted ${bad}`);
+        }
+        let saved = await request('PUT', '/api/nodes/public-address', adminToken, { publicAddress: ' Home.Example.com ' });
+        assert.equal(saved.status, 200); assert.equal(saved.data.publicAddress, `home.example.com:${nodeUrl.port}`);
+        assert.equal(saved.data.outsideHubUrl, `wss://home.example.com:${nodeUrl.port}/node/v1/connect`);
+        saved = await request('PUT', '/api/nodes/public-address', adminToken, { publicAddress: '203.0.113.7:4444' });
+        assert.equal(saved.data.outsideHubUrl, 'wss://203.0.113.7:4444/node/v1/connect');
+        const cfg2 = await request('GET', '/api/nodes/config', adminToken);
+        assert.equal(cfg2.data.publicAddress, '203.0.113.7:4444'); assert.equal(cfg2.data.hubUrl, config.data.hubUrl, 'LAN address unchanged');
+        outside = await request('POST', '/api/nodes/enrol', adminToken, { where: 'outside' });
+        assert.equal(outside.status, 201); assert.equal(outside.data.hubUrl, 'wss://203.0.113.7:4444/node/v1/connect');
+        assert.equal(outside.data.hubFingerprint, first.data.hubFingerprint, 'same pinned certificate');
+        const lanAgain = await request('POST', '/api/nodes/enrol', adminToken, { where: 'lan' });
+        assert.equal(lanAgain.data.hubUrl, config.data.hubUrl, 'LAN pairing still uses the LAN address');
+        for (const c of [outside, lanAgain]) assert.equal((await request('DELETE', `/api/nodes/enrol/${c.data.codeId}`, adminToken)).status, 200);
+        assert.equal((await request('PUT', '/api/nodes/public-address', adminToken, { publicAddress: '' })).data.publicAddress, '');
+        const outAudit = await request('GET', '/api/activity', adminToken);
+        assert.ok(outAudit.data.some(row => row.action === 'node-enrol-outside'));
+        assert.ok(outAudit.data.some(row => row.action === 'node-public-address' && row.detail === '203.0.113.7:4444'));
         let audit = await request('GET', '/api/activity', adminToken);
         assert.ok(audit.data.some(row => row.action === 'node-enrol' && row.user === 'admin' && row.detail === first.data.codeId));
         assert.ok(audit.data.some(row => row.action === 'node-enrol-cancel' && row.detail === first.data.codeId));

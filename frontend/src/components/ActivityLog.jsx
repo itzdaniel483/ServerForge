@@ -10,7 +10,7 @@ const WORDS = {
     'task-delete': 'Deleted task', 'task-run': 'Ran task', 'crash-restart': 'Crashed, restarting', 'crash-gave-up': 'Crashed, gave up',
     'task-restart': 'Scheduled restart', 'task-start': 'Scheduled start', 'task-stop': 'Scheduled stop', 'task-update': 'Scheduled update',
     'task-backup': 'Scheduled backup', 'task-command': 'Scheduled command',
-    'node-enrol': 'Created node code', 'node-enrol-cancel': 'Cancelled node code', 'node-approve': 'Approved node', 'node-remove': 'Removed node',
+    'node-enrol': 'Created node code', 'node-enrol-outside': 'Created outside node code', 'node-public-address': 'Set node public address', 'node-enrol-cancel': 'Cancelled node code', 'node-approve': 'Approved node', 'node-remove': 'Removed node',
     move: 'Moved server', 'move-finish': 'Finished move', 'node-update': 'Updated machine', 'launch-write': 'Changed command line',
 };
 // Remote actions (on another machine) read the same as local ones (Daniel 3730: "WAY too detailed").
