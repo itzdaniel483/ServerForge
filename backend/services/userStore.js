@@ -35,9 +35,26 @@ class UserStore extends EventEmitter {
                 console.log("No users found. Created 'admin' with ADMIN_PASSWORD.");
             }
             await this.addUser('admin', password, 'admin');
+        } else {
+            await this.dropStaleBootstrapPassword();
         }
 
         this.initialized = true;
+    }
+
+    // codex review (20 Nov 2026): the first-run password file must not outlive its use. Delete it as soon as it no longer
+    // opens the 'admin' account (password changed), and after any password change/reset.
+    async dropStaleBootstrapPassword({ force = false } = {}) {
+        const file = path.join(path.dirname(DATA_FILE), 'initial-admin-password');
+        if (!(await fs.pathExists(file))) return false;
+        if (!force) {
+            const admin = this.users.find(u => u.username === 'admin');
+            const pw = String(await fs.readFile(file, 'utf8')).trim();
+            if (admin && pw && await bcrypt.compare(pw, admin.passwordHash)) return false; // still the live password: keep until changed
+        }
+        await fs.remove(file);
+        console.log('Removed the first-run admin password file (no longer needed).');
+        return true;
     }
 
     async save() {
@@ -153,6 +170,7 @@ class UserStore extends EventEmitter {
         user.passwordHash = passwordHash;
         user.sessionVersion = (user.sessionVersion ?? 0) + 1;
         await this.save();
+        await this.dropStaleBootstrapPassword({ force: true });
         return { success: true };
     }
 
@@ -173,6 +191,7 @@ class UserStore extends EventEmitter {
         user.passwordHash = passwordHash;
         user.sessionVersion = (user.sessionVersion ?? 0) + 1;
         await this.save();
+        await this.dropStaleBootstrapPassword({ force: true });
 
         return { success: true };
     }

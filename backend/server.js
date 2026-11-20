@@ -485,6 +485,7 @@ app.post('/api/nodes/:id/update', requireAdmin, async (req, res) => {
 // ---- Move a server to another machine (claude, Daniel #gamemanager 3576/3580). ----
 // Per machine: pack the game's configs/saves, hand the archive out in chunks, receive + unpack into a server folder.
 const moveArchive = require('./services/moveArchive');
+try { const n = moveArchive.cleanupStale(); if (n) console.log(`Removed ${n} stale move archive(s) older than 24 h`); } catch (e) { console.warn('Move cleanup skipped:', e.message); }
 const moveErr = (res, err) => res.status(err.status || 400).json({ error: err.message, code: err.code });
 const gameOf = srv => catalog.get(srv.gameId) || catalog.findByAppId(srv.appId);
 app.post('/api/server/:id/export', requireAdmin, (req, res) => {

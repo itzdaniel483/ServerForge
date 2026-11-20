@@ -102,6 +102,18 @@ function importInto(serverPath, t) {
     fs.rmSync(file, { force: true });
     return { files: count };
 }
+// codex review (20 Nov 2026): half-finished transfers (a move that never completed) must not pile up.
+// Called at startup: removes in-/out- archives older than maxAgeMs (default 24 h).
+function cleanupStale(maxAgeMs = 24 * 3600e3, now = Date.now()) {
+    if (!fs.existsSync(DIR)) return 0;
+    let removed = 0;
+    for (const f of fs.readdirSync(DIR)) {
+        if (!/^(in|out)-[A-Za-z0-9_-]+\.zip$/.test(f)) continue;
+        const p = path.join(DIR, f);
+        try { if (now - fs.statSync(p).mtimeMs > maxAgeMs) { fs.rmSync(p, { force: true }); removed++; } } catch { /* gone already */ }
+    }
+    return removed;
+}
 function cleanup(t) { for (const p of ['out', 'in']) fs.rmSync(path.join(DIR, `${p}-${token(t)}.zip`), { force: true }); return { removed: true }; }
 
-module.exports = { keepPaths, exportServer, readChunk, receiveChunk, importInto, cleanup, CHUNK };
+module.exports = { keepPaths, exportServer, readChunk, receiveChunk, importInto, cleanup, cleanupStale, CHUNK, DIR };
